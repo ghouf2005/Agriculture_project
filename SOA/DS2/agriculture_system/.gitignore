@@ -1,0 +1,25 @@
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+/staticfiles/
+media/
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+env/
+virt/
+virtualenv/
+
+# Pipenv
+Pipfile.lock
+
+# VSCode / PyCharm
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,20 +1,25 @@
 from django.urls import path
 from .views import (
-    FarmProfileListCreateView,
-    FieldPlotListCreateView,
-    SensorReadingListCreateView,
-    AnomalyEventListView,
-    AgentRecommendationListView,
+    FarmListView,
+    PlotByFarmView,
+    SensorReadingCreateView,
+    SensorReadingListView,
+    AnomalyListView,
+    RecommendationListView
 )
 
 urlpatterns = [
+    # Farms
+    path("farms/", FarmListView.as_view(), name="farm-list"),
+    path("farms/<int:farm_id>/plots/", PlotByFarmView.as_view(), name="plots-by-farm"),
 
-    # Optional (useful for frontend)
-    path("api/farms/", FarmProfileListCreateView.as_view(), name="farms"),
-    path("api/plots/", FieldPlotListCreateView.as_view(), name="plots"),
+    # Sensor Readings
+    path("sensor-readings/", SensorReadingListView.as_view(), name="sensor-reading-list"),
+    path("sensor-readings/create/", SensorReadingCreateView.as_view(), name="sensor-reading-create"),
 
-    # REQUIRED BY DOCUMENT
-    path("api/sensor-readings/", SensorReadingListCreateView.as_view(), name="sensor-readings"),
-    path("api/anomalies/", AnomalyEventListView.as_view(), name="anomalies"),
-    path("api/recommendations/", AgentRecommendationListView.as_view(), name="recommendations"),
+    # Anomalies
+    path("anomalies/", AnomalyListView.as_view(), name="anomaly-list"),
+
+    # Agent Recommendations
+    path("recommendations/", RecommendationListView.as_view(), name="recommendation-list"),
 ]

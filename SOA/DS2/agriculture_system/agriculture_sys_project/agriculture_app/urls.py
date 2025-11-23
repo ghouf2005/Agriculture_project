@@ -1,17 +1,20 @@
-from rest_framework import routers
-from django.urls import path,include
+from django.urls import path
+from .views import (
+    FarmProfileListCreateView,
+    FieldPlotListCreateView,
+    SensorReadingListCreateView,
+    AnomalyEventListView,
+    AgentRecommendationListView,
+)
 
-from .views import FieldPlotViewSet,FarmProfileViewSet,SensorReadingViewSet,AnomalyEventViewSet,AgentRecommendationViewSet
-router=routers.DefaultRouter()
+urlpatterns = [
 
-router.register(r'FieldPlot', FieldPlotViewSet)
-router.register(r'FarmProfile', FarmProfileViewSet)
-router.register(r'SensorReading', SensorReadingViewSet)
-router.register(r'AnomalyEvent', AnomalyEventViewSet)
-router.register(r'AgentRecommendation', AgentRecommendationViewSet)
+    # Optional (useful for frontend)
+    path("api/farms/", FarmProfileListCreateView.as_view(), name="farms"),
+    path("api/plots/", FieldPlotListCreateView.as_view(), name="plots"),
 
-urlpatterns=[
-    path('',include(router.urls))
+    # REQUIRED BY DOCUMENT
+    path("api/sensor-readings/", SensorReadingListCreateView.as_view(), name="sensor-readings"),
+    path("api/anomalies/", AnomalyEventListView.as_view(), name="anomalies"),
+    path("api/recommendations/", AgentRecommendationListView.as_view(), name="recommendations"),
 ]
-
-

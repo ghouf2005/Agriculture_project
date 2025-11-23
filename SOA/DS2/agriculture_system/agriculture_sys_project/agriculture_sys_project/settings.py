@@ -37,6 +37,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "rest_framework",
+    "corsheaders",
+    "drf_spectacular",
     'agriculture_app',
 
 ]
@@ -76,9 +79,31 @@ WSGI_APPLICATION = 'agriculture_sys_project.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'crop_monitor',
+        'USER': 'ghof',
+        'PASSWORD': 'Ghof2025Pass',
+        'HOST': 'localhost',
+        'PORT': '5432',
     }
+}
+
+from datetime import timedelta
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    # Optional but recommended: lock everything by default
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+}
+
+# Optional: JWT configuration (you can tweak later)
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
 }
 
 

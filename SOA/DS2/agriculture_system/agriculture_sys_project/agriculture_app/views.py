@@ -1,25 +1,50 @@
-from django.shortcuts import render
-from rest_framework import viewsets
-from .models import FieldPlot,FarmProfile,SensorReading,AnomalyEvent,AgentRecommendation
-from .serializers import FieldPlotSerializer,FarmProfileSerializer,SensorReadingSerializer,AnomalyEventSerializer,AgentRecommendationSerializer
-from rest_framework.decorators import action
+from rest_framework import generics
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+from .models import (
+    FarmProfile,
+    FieldPlot,
+    SensorReading,
+    AnomalyEvent,
+    AgentRecommendation
+)
+from .serializers import (
+    FarmProfileSerializer,
+    FieldPlotSerializer,
+    SensorReadingSerializer,
+    AnomalyEventSerializer,
+    AgentRecommendationSerializer
+)
 
-class FarmProfileViewSet(viewsets.ModelViewSet):
+
+class FarmProfileListCreateView(generics.ListCreateAPIView):
     queryset = FarmProfile.objects.all()
     serializer_class = FarmProfileSerializer
 
-class FieldPlotViewSet(viewsets.ModelViewSet):
+
+class FieldPlotListCreateView(generics.ListCreateAPIView):
     queryset = FieldPlot.objects.all()
     serializer_class = FieldPlotSerializer
 
-class SensorReadingViewSet(viewsets.ModelViewSet):
-    queryset = SensorReading.objects.all()
+
+class SensorReadingListCreateView(generics.ListCreateAPIView):
     serializer_class = SensorReadingSerializer
 
-class AnomalyEventViewSet(viewsets.ModelViewSet):
+    def get_queryset(self):
+        queryset = SensorReading.objects.all()
+        plot_id = self.request.query_params.get("plot")
+
+        if plot_id:
+            queryset = queryset.filter(plot_id=plot_id)
+
+        return queryset
+
+
+class AnomalyEventListView(generics.ListAPIView):
     queryset = AnomalyEvent.objects.all()
     serializer_class = AnomalyEventSerializer
 
-class AgentRecommendationViewSet(viewsets.ModelViewSet):
+
+class AgentRecommendationListView(generics.ListAPIView):
     queryset = AgentRecommendation.objects.all()
     serializer_class = AgentRecommendationSerializer

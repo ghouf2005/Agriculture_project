@@ -1,18 +1,21 @@
 from django.db import models
 
 class SensorType(models.TextChoices):
-    MOISTURE = "moisture", "Soil Moisture"
-    TEMPERATURE = "temperature", "Air Temperature"
-    HUMIDITY = "humidity", "Humidity"
+    MOISTURE = "MOISTURE", "Moisture"
+    TEMPERATURE = "TEMPERATURE", "Temperature"
+    HUMIDITY = "HUMIDITY", "Humidity"
+
 
 class AnomalyType(models.TextChoices):
-    LOW_MOISTURE = "low_moisture", "Low Moisture"
-    HIGH_TEMPERATURE = "high_temperature", "High Temperature"
-    HUMIDITY_DAMAGE = "humidity_damage", "Abnormal Humidity"
-    GENERAL_ANOMALY = "general_anomaly", "General Anomaly"
+    HIGH_MOISTURE = "HIGH_MOISTURE", "High Moisture"
+    LOW_MOISTURE = "LOW_MOISTURE", "Low Moisture"
+    HIGH_TEMPERATURE = "HIGH_TEMPERATURE", "High Temperature"
+    LOW_TEMPERATURE = "LOW_TEMPERATURE", "Low Temperature"
+    HIGH_HUMIDITY = "HIGH_HUMIDITY", "High Humidity"
+    LOW_HUMIDITY = "LOW_HUMIDITY", "Low Humidity"
 
 
 class SeverityLevel(models.TextChoices):
-    LOW = "low", "Low"
-    MEDIUM = "medium", "Medium"
-    HIGH = "high", "High"
+    HIGH = "HIGH", "High"
+    MEDIUM = "MEDIUM", "Medium"
+    LOW = "LOW", "Low"

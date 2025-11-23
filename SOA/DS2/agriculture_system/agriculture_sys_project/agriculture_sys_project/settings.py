@@ -80,7 +80,7 @@ WSGI_APPLICATION = 'agriculture_sys_project.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'crop_monitor',
+        'NAME': 'farm_db',
         'USER': 'ghof',
         'PASSWORD': 'Ghof2025Pass',
         'HOST': 'localhost',

@@ -1,5 +1,12 @@
 from rest_framework import serializers
-from .models import SensorReading, Anomaly, Recommendation,FarmProfile
+from .models import (
+    FarmProfile,
+    FieldPlot,
+    SensorReading,
+    AnomalyEvent,
+    AgentRecommendation
+)
+
 
 class FarmProfileSerializer(serializers.ModelSerializer):
     class Meta:

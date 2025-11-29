@@ -26,3 +26,5 @@ Thumbs.db
 
 # Environment variables
 .env
+
+agriculture_system/agriculture_sys_project/agriculture_sys_project/settings.py

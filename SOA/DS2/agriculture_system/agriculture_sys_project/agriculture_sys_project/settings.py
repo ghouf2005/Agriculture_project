@@ -109,7 +109,7 @@ from datetime import timedelta
 SIMPLE_JWT = {
     "SIGNING_KEY": os.getenv("JWT_SECRET", SECRET_KEY),
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_LIFETIME_MINUTES", 60))),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_LIFETIME_DAYS", 1))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_LIFETIME_DAYS", 30))),
 }
 
 

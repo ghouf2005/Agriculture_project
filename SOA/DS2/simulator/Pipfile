@@ -8,6 +8,7 @@ numpy = "*"
 requests = "*"
 faker = "*"
 matplotlib = "*"
+python-dotenv = "*"
 
 [dev-packages]
 

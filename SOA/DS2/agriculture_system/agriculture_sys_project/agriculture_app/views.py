@@ -41,7 +41,7 @@ class PlotByFarmView(generics.ListAPIView):
 # ---------------------------------------------------
 class SensorReadingCreateView(generics.CreateAPIView):
     serializer_class = SensorReadingSerializer
-    permission_classes = [permissions.AllowAny]  # simulator can send without auth
+    permission_classes = [permissions.IsAuthenticated]  # only simulator can post
 
     def perform_create(self, serializer):
         instance = serializer.save()

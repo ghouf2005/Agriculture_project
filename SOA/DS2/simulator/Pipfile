@@ -4,9 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-numpy = "*"
-requests = "*"
+scikit-learn = "*"
+django = "*"
+djangorestframework = "*"
+psycopg2-binary = "*"
+djangorestframework-simplejwt = "*"
 faker = "*"
+numpy = "*"
 matplotlib = "*"
 python-dotenv = "*"
 

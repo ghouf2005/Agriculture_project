@@ -5,7 +5,9 @@ from .views import (
     SensorReadingCreateView,
     SensorReadingListView,
     AnomalyListView,
-    RecommendationListView
+    RecommendationListView,
+    TrainModelView,           
+    AnomalyStatsView          
 )
 
 urlpatterns = [
@@ -22,4 +24,8 @@ urlpatterns = [
 
     # Agent Recommendations
     path("recommendations/", RecommendationListView.as_view(), name="recommendation-list"),
+
+    # ✨ NOUVEAU : ML Endpoints
+    path("ml/train/", TrainModelView.as_view(), name="ml-train"),
+    path("anomalies/stats/", AnomalyStatsView.as_view(), name="anomaly-stats"),
 ]

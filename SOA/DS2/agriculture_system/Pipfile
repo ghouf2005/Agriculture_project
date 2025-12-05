@@ -5,16 +5,16 @@ name = "pypi"
 
 [packages]
 django = "*"
-psycopg2-binary = "*"
 djangorestframework = "*"
 django-cors-headers = "*"
 drf-spectacular = "*"
 faker = "*"
-numpy = "*"
 matplotlib = "*"
-python-dotenv = "*"
-scikit-learn = "*"
 djangorestframework-simplejwt = "*"
+numpy = "*"
+scikit-learn = "*"
+psycopg2-binary = "*"
+python-dotenv = "*"
 
 [dev-packages]
 

@@ -13,6 +13,7 @@ faker = "*"
 numpy = "*"
 matplotlib = "*"
 python-dotenv = "*"
+requests = "*"
 
 [dev-packages]
 

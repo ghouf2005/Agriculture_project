@@ -270,6 +270,18 @@ class AnomalyDetector:
         else:
             return self._get_high_anomaly_type(reading.sensor_type)
 
+    def get_recommendation(self, anomaly_type):
+        """Génère une recommandation basée sur le type d'anomalie"""
+        recommendations = {
+            AnomalyType.LOW_MOISTURE: "Irrigation requise immédiatement. Vérifier le système d'arrosage.",
+            AnomalyType.HIGH_MOISTURE: "Arrêter l'irrigation. Vérifier le drainage du sol.",
+            AnomalyType.LOW_TEMPERATURE: "Risque de gel. Couvrir les cultures ou activer le chauffage si disponible.",
+            AnomalyType.HIGH_TEMPERATURE: "Risque de stress thermique. Augmenter l'ombrage ou la ventilation.",
+            AnomalyType.LOW_HUMIDITY: "Augmenter l'humidification ou la brumisation.",
+            AnomalyType.HIGH_HUMIDITY: "Améliorer la ventilation pour réduire l'humidité et prévenir les maladies.",
+        }
+        return recommendations.get(anomaly_type, "Surveiller la situation et vérifier les capteurs.")
+
 
 # Instance globale du détecteur
 anomaly_detector = AnomalyDetector()

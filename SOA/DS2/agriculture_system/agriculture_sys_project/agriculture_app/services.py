@@ -2,7 +2,7 @@
 Services pour l'analyse des capteurs et la gestion des anomalies
 """
 from django.db.models import Avg
-from .models import SensorReading, AnomalyEvent
+from .models import SensorReading, AnomalyEvent, AgentRecommendation
 from .ml_module import anomaly_detector
 
 
@@ -41,6 +41,13 @@ def process_sensor_reading(reading):
         
         results['anomaly_created'] = True
         results['anomaly_event'] = anomaly_event
+        
+        # Générer une recommandation
+        rec_text = anomaly_detector.get_recommendation(anomaly_event.anomaly_type)
+        AgentRecommendation.objects.create(
+            anomaly_event=anomaly_event,
+            recommended_action=rec_text
+        )
         
         print(f"🚨 Anomalie détectée : {anomaly_event.anomaly_type} "
               f"(sévérité: {anomaly_event.severity}, "

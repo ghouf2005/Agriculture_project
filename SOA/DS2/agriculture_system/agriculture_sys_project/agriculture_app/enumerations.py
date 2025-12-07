@@ -19,3 +19,9 @@ class SeverityLevel(models.TextChoices):
     HIGH = "HIGH", "High"
     MEDIUM = "MEDIUM", "Medium"
     LOW = "LOW", "Low"
+
+
+class AgentConfidence(models.TextChoices):
+    LOW = 'LOW', 'Low'
+    MEDIUM = 'MEDIUM', 'Medium'
+    HIGH = 'HIGH', 'High'

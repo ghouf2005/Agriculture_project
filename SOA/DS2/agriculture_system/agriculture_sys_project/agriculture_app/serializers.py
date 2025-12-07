@@ -21,14 +21,18 @@ class FieldPlotSerializer(serializers.ModelSerializer):
 class SensorReadingSerializer(serializers.ModelSerializer):
     class Meta:
         model = SensorReading
-        fields = '__all__'
+        #fields='__all__'
+        # 'created_at' is omitted to keep it as an internal, server-side field.
+        fields = ['id', 'plot', 'sensor_type', 'value', 'timestamp']
 
 class AnomalyEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = AnomalyEvent
-        fields = '__all__'
+        fields = ['id', 'plot', 'anomaly_type', 'severity', 'description', 'model_confidence', 'timestamp']
+
 
 class AgentRecommendationSerializer(serializers.ModelSerializer):
     class Meta:
         model = AgentRecommendation
-        fields = '__all__'
+        #fields='__all__'
+        fields = ['id', 'anomaly_event', 'recommended_action', 'explanation_text', 'confidence', 'timestamp']

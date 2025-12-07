@@ -24,14 +24,20 @@ class AnomalyDetector:
         SensorType.HUMIDITY: {'min': 30, 'max': 85, 'critical_min': 20, 'critical_max': 95},
     }
     
+    # ML désactivé pour aligner détection live/évaluation et éviter les rafales de faux positifs
+    USE_ML = False
+
     def __init__(self):
         """Initialise le modèle Isolation Forest"""
-        self.isolation_forest = IsolationForest(
-            contamination=0.1,  # 10% des données sont considérées comme anomalies
+        # Modèles par plot pour éviter le spillover inter-parcelle
+        self.models = {}
+
+    def _build_model(self):
+        return IsolationForest(
+            contamination=0.01,
             random_state=42,
-            n_estimators=100
+            n_estimators=200
         )
-        self.is_trained = False
     
     def train_on_historical_data(self, plot_id, min_samples=100):
         """
@@ -44,11 +50,10 @@ class AnomalyDetector:
         Returns:
             bool: True si entraînement réussi
         """
-        # Récupérer les dernières lectures (dernières 24h simulées)
+        # Récupérer tout l'historique pour couvrir un cycle complet
         recent_readings = SensorReading.objects.filter(
             plot_id=plot_id
-        ).order_by('-timestamp')[:min_samples * 3]  # 3 types de capteurs
-        
+        ).order_by('-timestamp')  # pas de limite
         if recent_readings.count() < min_samples:
             print(f"⚠️ Pas assez de données pour entraîner (besoin: {min_samples}, disponible: {recent_readings.count()})")
             return False
@@ -59,6 +64,11 @@ class AnomalyDetector:
         # Grouper par timestamp pour avoir les 3 valeurs ensemble
         readings_by_time = {}
         for reading in recent_readings:
+            # Exclure les valeurs déjà hors seuil pour garder un jeu quasi-normal
+            is_thresh_anom, _, _, _ = self.detect_threshold_anomaly(reading.sensor_type, reading.value)
+            if is_thresh_anom:
+                continue
+
             ts_key = reading.timestamp.replace(microsecond=0, second=0)
             if ts_key not in readings_by_time:
                 readings_by_time[ts_key] = {}
@@ -78,12 +88,16 @@ class AnomalyDetector:
             print(f"⚠️ Pas assez de vecteurs complets : {len(features)}")
             return False
         
-        # Entraîner le modèle
+        # Entraîner le modèle pour ce plot
         X = np.array(features)
-        self.isolation_forest.fit(X)
-        self.is_trained = True
-        
-        print(f"✅ Modèle entraîné avec {len(features)} échantillons")
+        model = self._build_model()
+        model.fit(X)
+        self.models[plot_id] = {
+            'model': model,
+            'trained': True
+        }
+
+        print(f"✅ Modèle entraîné (plot {plot_id}) avec {len(features)} échantillons")
         return True
     
     def detect_threshold_anomaly(self, sensor_type, value):
@@ -118,7 +132,7 @@ class AnomalyDetector:
         
         return False, None, None, 0.0
     
-    def detect_ml_anomaly(self, plot_id, window_size=10):
+    def detect_ml_anomaly(self, plot_id, window_size=30):
         """
         Détection ML avec Isolation Forest
         Analyse les dernières lectures en fenêtre glissante
@@ -126,10 +140,12 @@ class AnomalyDetector:
         Returns:
             tuple: (is_anomaly, severity, confidence)
         """
-        if not self.is_trained:
+        model_info = self.models.get(plot_id)
+        if not model_info or not model_info.get('trained'):
             print("⚠️ Modèle non entraîné, entraînement automatique...")
             if not self.train_on_historical_data(plot_id):
                 return False, None, 0.0
+            model_info = self.models.get(plot_id)
         
         # Récupérer les dernières lectures
         recent = SensorReading.objects.filter(
@@ -164,25 +180,29 @@ class AnomalyDetector:
         
         # Prédiction
         X = np.array(latest_vectors)
-        predictions = self.isolation_forest.predict(X)
-        scores = self.isolation_forest.score_samples(X)
-        
+        clf = model_info['model']
+        predictions = clf.predict(X)
+        scores = clf.score_samples(X)
+
         # -1 = anomalie, 1 = normal
-        anomaly_ratio = np.sum(predictions == -1) / len(predictions)
-        
-        if anomaly_ratio > 0.3:  # Plus de 30% des échantillons sont anormaux
-            avg_score = np.mean(scores)
-            confidence = abs(avg_score)
-            
+        pred_arr = np.array(predictions)
+        anomaly_ratio = np.sum(pred_arr == -1) / len(pred_arr)
+        anomaly_count = np.sum(pred_arr == -1)
+        avg_score = float(np.mean(scores))
+
+        # Gardes-fous plus stricts pour limiter les faux positifs
+        if anomaly_count >= 8 and anomaly_ratio > 0.5 and avg_score < -0.12:
+            confidence = min(abs(avg_score), 1.0)
+
             if anomaly_ratio > 0.7:
                 severity = SeverityLevel.HIGH
-            elif anomaly_ratio > 0.5:
+            elif anomaly_ratio > 0.55:
                 severity = SeverityLevel.MEDIUM
             else:
                 severity = SeverityLevel.LOW
-            
-            return True, severity, min(confidence, 1.0)
-        
+
+            return True, severity, confidence
+
         return False, None, 0.0
     
     def analyze_reading(self, reading):
@@ -216,16 +236,17 @@ class AnomalyDetector:
             results['detection_method'] = 'threshold'
             return results
         
-        # 2. Détection ML (patterns complexes)
-        is_ml_anomaly, ml_severity, ml_confidence = \
-            self.detect_ml_anomaly(reading.plot_id)
-        
-        if is_ml_anomaly:
-            results['has_anomaly'] = True
-            results['anomaly_type'] = self._infer_anomaly_type_from_context(reading)
-            results['severity'] = ml_severity
-            results['confidence'] = ml_confidence
-            results['detection_method'] = 'isolation_forest'
+        if self.USE_ML:
+            # 2. Détection ML (patterns complexes) – désactivée par défaut
+            is_ml_anomaly, ml_severity, ml_confidence = \
+                self.detect_ml_anomaly(reading.plot_id)
+
+            if is_ml_anomaly:
+                results['has_anomaly'] = True
+                results['anomaly_type'] = self._infer_anomaly_type_from_context(reading)
+                results['severity'] = ml_severity
+                results['confidence'] = ml_confidence
+                results['detection_method'] = 'isolation_forest'
         
         return results
     

@@ -1,45 +1,41 @@
-# ======================================================
-# Plot configuration 
-# ======================================================
-PLOT_IDS = [1, 2 , 3 , 4]  # Must exist in database
-
+from datetime import datetime
 
 # ======================================================
-# Time configuration
+# Plot configuration
 # ======================================================
-READING_INTERVAL_SEC = 1        # every 1 real second
-MINUTES_PER_STEP = 5            # equals 5 minutes of simulated time
-TOTAL_SIM_MINUTES = 24 * 60     # simulate a full day
+PLOT_IDS = [1, 2, 3, 4]
 
-
-# ======================================================
-# Normal base ranges
-# ======================================================
-BASE_MOISTURE_RANGE = (45, 75)      # %
-BASE_TEMPERATURE_RANGE = (18, 28)   # °C
-BASE_HUMIDITY_RANGE = (45, 75)      # %
-
+PLOT_FARM_MAP = {
+    1: "farmA",
+    2: "farmA",
+    3: "farmB",
+    4: "farmB",
+}
 
 # ======================================================
-# Diurnal cycle parameters (Day/night)
+# Simulation time
 # ======================================================
+SIMULATION_START_DATETIME = datetime(2025, 1, 9, 6, 0, 0)
+
+READING_INTERVAL_SEC = 1
+MINUTES_PER_STEP = 5
+TOTAL_SIM_MINUTES = 24 * 60
+
+# ======================================================
+# Normal ranges
+# ======================================================
+BASE_MOISTURE_RANGE = (45, 75)
+TEMP_DAY_PEAK, TEMP_NIGHT_LOW = 28, 18
+HUM_DAY_LOW, HUM_NIGHT_HIGH = 45, 75
 DAY_LENGTH_MINUTES = 24 * 60
 
-# Temperature day/night curve
-TEMP_DAY_PEAK = 28       # hottest point
-TEMP_NIGHT_LOW = 18      # coldest point
-
-# Humidity inverse to temperature
-HUM_DAY_LOW = 45
-HUM_NIGHT_HIGH = 75
-
+# Reduced noise because we now have farm offsets
+TEMP_NOISE_MAX = 0.3
+HUM_NOISE_MAX = 1.5
+MOISTURE_NOISE_MAX = 1.0
 
 # ======================================================
-# Random noise (small variations)
+# Anomaly multiplicity — keep sparse to favor normal data
 # ======================================================
-MOISTURE_NOISE_MAX = 1.0    # %
-TEMP_NOISE_MAX = 0.7        # °C
-HUM_NOISE_MAX = 3.0         # %
-
-
-USE_FAKE_DEVICE_IDS = True
+MIN_ANOMALIES_PER_TYPE = 0
+MAX_ANOMALIES_PER_TYPE = 1

@@ -1,212 +1,181 @@
 """
-Injecteur d'anomalies pour tester le système de détection
-Version améliorée avec logging des ground truth
+Anomaly Injector – supports multiple anomalies per type + perfect farm-wide behavior
 """
 import numpy as np
 import json
+import random
 from pathlib import Path
+import config
+from datetime import timedelta
 
 
 class AnomalyInjector:
-    """
-    Injecte des anomalies contrôlées dans les données capteurs
-    """
-    
     def __init__(self, log_file='anomalies_ground_truth.json'):
-        # Définir les scénarios d'anomalies (minute_début, minute_fin, type, paramètres)
         self.anomaly_scenarios = {
             'irrigation_failure': {
-                'start': 180,      # Commence à 3h de simulation
-                'end': 300,        # Termine à 5h
                 'type': 'moisture_drop',
-                'params': {'drop_rate': 2.5, 'target_min': 30}
+                'params': {'drop_rate': 3.0, 'target_min': 25},
+                'start_range': (120, 1200),
+                'duration_range': (30, 45)
             },
             'heat_wave': {
-                'start': 600,      # Commence à 10h
-                'end': 720,        # Termine à 12h
                 'type': 'temperature_spike',
-                'params': {'increase': 10}
+                'params': {'increase': 10},
+                'start_range': (540, 900),
+                'duration_range': (30, 45)
             },
             'sensor_malfunction': {
-                'start': 900,      # Commence à 15h
-                'end': 960,        # Termine à 16h
                 'type': 'erratic_readings',
-                'params': {'variance': 20}
+                'params': {'variance': 6},
+                'start_range': (240, 1080),  # avoid crowding the very start of the day
+                'duration_range': (12, 18)   # slightly longer to balance counts
             },
             'dry_air': {
-                'start': 400,      # Commence à 6h40
-                'end': 500,        # Termine à 8h20
                 'type': 'humidity_drop',
-                'params': {'target': 25}
+                'params': {'target': 25},
+                'start_range': (360, 1080),
+                'duration_range': (30, 45)
             }
         }
-        
-        # ✨ NOUVEAU : Logger les anomalies injectées
+
+        self.farm_wide_scenarios = {"heat_wave", "dry_air"}
+        self.balanced_local_scenarios = {"irrigation_failure", "sensor_malfunction"}
+        self.base_windows = {}           # {scenario: [window1, window2, ...]}
+        self.per_plot_windows = {}       # {plot_id: {scenario: [windows...]}}
         self.log_file = Path(log_file)
         self.ground_truth_log = []
-    
-    def get_active_anomalies(self, current_minute):
-        """
-        Retourne la liste des anomalies actives au moment donné
-        """
+
+        self._generate_base_windows()
+
+    def _generate_windows(self, cfg, min_count=None, max_count=None):
+        """Generate sparse random windows for a scenario"""
+        min_ct = config.MIN_ANOMALIES_PER_TYPE if min_count is None else min_count
+        max_ct = config.MAX_ANOMALIES_PER_TYPE if max_count is None else max_count
+        n = random.randint(min_ct, max_ct)
+        windows = []
+        for _ in range(n):
+            start = random.uniform(*cfg['start_range'])
+            duration = random.uniform(*cfg['duration_range'])
+            if start + duration > 1440:
+                duration = 1440 - start - 1
+            windows.append({
+                'start': start,
+                'end': start + duration,
+                'type': cfg['type'],
+                'params': cfg['params']
+            })
+        return windows
+
+    def _generate_base_windows(self):
+        # Force one window per scenario to balance shares
+        for name, cfg in self.anomaly_scenarios.items():
+            self.base_windows[name] = self._generate_windows(cfg, min_count=1, max_count=1)
+
+    def configure_for_plots(self, plot_ids, plot_farm_map=None):
+        plot_farm_map = plot_farm_map or {}
+        self.per_plot_windows = {pid: {} for pid in plot_ids}
+
+        balanced_templates = {}
+        for scenario_name, cfg in self.anomaly_scenarios.items():
+            if scenario_name in self.balanced_local_scenarios:
+                balanced_templates[scenario_name] = self._generate_windows(cfg, min_count=1, max_count=1)
+
+        for idx, plot_id in enumerate(plot_ids):
+            farm_id = plot_farm_map.get(plot_id, f"farm_{plot_id}")
+
+            for scenario_name, base_list in self.base_windows.items():
+                if scenario_name in self.farm_wide_scenarios:
+                    # Same timing for whole farm + small jitter
+                    farm_windows = []
+                    for win in base_list:
+                        jitter = random.uniform(-10, 10)
+                        farm_windows.append({
+                            'start': max(0, win['start'] + jitter),
+                            'end': max(0, win['end'] + jitter),
+                            'type': win['type'],
+                            'params': win['params']
+                        })
+                    self.per_plot_windows[plot_id][scenario_name] = farm_windows
+                elif scenario_name in self.balanced_local_scenarios:
+                    template = balanced_templates.get(scenario_name, [])
+                    windows = []
+                    for j, win in enumerate(template):
+                        stagger = (idx * 20) + random.uniform(-5, 5)
+                        start = max(0, win['start'] + stagger + j * 5)
+                        end = max(start + 1, win['end'] + stagger + j * 5)
+                        windows.append({
+                            'start': start,
+                            'end': end,
+                            'type': win['type'],
+                            'params': win['params']
+                        })
+                    self.per_plot_windows[plot_id][scenario_name] = windows
+                else:
+                    # Fully independent per plot
+                    cfg = self.anomaly_scenarios[scenario_name]
+                    max_ct = 1 if scenario_name == "sensor_malfunction" else None
+                    self.per_plot_windows[plot_id][scenario_name] = self._generate_windows(cfg, max_count=max_ct)
+
+    def get_active_anomalies(self, current_minute, plot_id=None):
         active = []
-        
-        for name, config in self.anomaly_scenarios.items():
-            if config['start'] <= current_minute < config['end']:
-                duration = config['end'] - config['start']
-                elapsed = current_minute - config['start']
-                progress = elapsed / duration if duration > 0 else 0
-                
-                active.append({
-                    'name': name,
-                    'type': config['type'],
-                    'params': config['params'],
-                    'progress': progress
-                })
-        
+        windows = self.per_plot_windows.get(plot_id, self.base_windows)
+
+        for scenario_name, win_list in windows.items():
+            for win in win_list:
+                if win['start'] <= current_minute < win['end']:
+                    progress = (current_minute - win['start']) / (win['end'] - win['start'])
+                    active.append({
+                        'name': scenario_name,
+                        'type': win['type'],
+                        'params': win['params'],
+                        'progress': progress
+                    })
         return active
-    
-    def apply_moisture_drop(self, current_value, params, progress):
-        """
-        Simule une chute d'humidité du sol (panne d'irrigation)
-        """
-        drop_rate = params.get('drop_rate', 2.0)
-        target_min = params.get('target_min', 30)
-        
-        # Chute rapide au début
-        if progress < 0.2:
-            new_value = current_value - drop_rate * 3
-        # Stabilisation à un niveau bas
-        else:
-            new_value = max(target_min, current_value - drop_rate * 0.3)
-        
-        return new_value
-    
-    def apply_temperature_spike(self, current_value, params, progress):
-        """
-        Simule une vague de chaleur
-        """
-        increase = params.get('increase', 8)
-        # Augmentation progressive
-        spike = increase * min(progress * 1.5, 1.0)
-        return current_value + spike
-    
-    def apply_erratic_readings(self, current_value, params, progress):
-        """
-        Simule un capteur défectueux
-        """
-        variance = params.get('variance', 15)
-        noise = np.random.uniform(-variance, variance)
-        return current_value + noise
-    
-    def apply_humidity_drop(self, current_value, params, progress):
-        """
-        Simule une baisse d'humidité de l'air
-        """
-        target = params.get('target', 30)
-        # Descente progressive
-        drop = (current_value - target) * progress * 0.15
-        return current_value - drop
-    
+
+    # ——————— Anomaly effects ———————
+    def apply_temperature_spike(self, v, p, prog): return v + p['increase'] * min(prog * 1.6, 1.0)
+    def apply_humidity_drop(self, v, p, prog):     return v - (v - p['target']) * prog * 0.8
+    def apply_moisture_drop(self, v, p, prog):
+        if prog < 0.25: return v - p['drop_rate'] * 3.5
+        return max(p['target_min'], v - p['drop_rate'] * 0.3)
+    def apply_erratic_readings(self, v, p, _):     return v + np.random.uniform(-p['variance'], p['variance'])
+
     def modify_sensor_value(self, sensor_type, value, current_minute, plot_id=None):
-        """
-        Applique les anomalies actives à une valeur de capteur
-        
-        Args:
-            sensor_type: Type de capteur ('MOISTURE', 'TEMPERATURE', 'HUMIDITY')
-            value: Valeur normale du capteur
-            current_minute: Minute actuelle de simulation
-            plot_id: ID du plot (optionnel, pour logging)
-        
-        Returns:
-            (modified_value, anomaly_name or None)
-        """
-        active_anomalies = self.get_active_anomalies(current_minute)
-        
-        if not active_anomalies:
+        active = self.get_active_anomalies(current_minute, plot_id)
+        if not active:
             return value, None
-        
-        modified_value = value
-        detected_anomaly = None
-        
-        for anomaly in active_anomalies:
-            anom_type = anomaly['type']
-            params = anomaly['params']
-            progress = anomaly['progress']
-            
-            # Appliquer selon le type de capteur et d'anomalie
-            if sensor_type == 'MOISTURE' and anom_type == 'moisture_drop':
-                modified_value = self.apply_moisture_drop(modified_value, params, progress)
-                detected_anomaly = anomaly['name']
-            
-            elif sensor_type == 'TEMPERATURE' and anom_type == 'temperature_spike':
-                modified_value = self.apply_temperature_spike(modified_value, params, progress)
-                detected_anomaly = anomaly['name']
-            
-            elif anom_type == 'erratic_readings':
-                modified_value = self.apply_erratic_readings(modified_value, params, progress)
-                detected_anomaly = anomaly['name']
-            
-            elif sensor_type == 'HUMIDITY' and anom_type == 'humidity_drop':
-                modified_value = self.apply_humidity_drop(modified_value, params, progress)
-                detected_anomaly = anomaly['name']
-        
-        # ✨ NOUVEAU : Logger le ground truth
-        if detected_anomaly:
-            self.log_ground_truth(
-                minute=current_minute,
-                plot_id=plot_id,
-                sensor_type=sensor_type,
-                original_value=value,
-                modified_value=modified_value,
-                anomaly_name=detected_anomaly
-            )
-        
-        return modified_value, detected_anomaly
-    
-    def log_ground_truth(self, minute, plot_id, sensor_type, original_value, modified_value, anomaly_name):
-        """
-        ✨ NOUVEAU : Enregistre les anomalies injectées pour évaluation
-        """
-        self.ground_truth_log.append({
-            'minute': minute,
-            'plot_id': plot_id,
-            'sensor_type': sensor_type,
-            'original_value': round(original_value, 2),
-            'modified_value': round(modified_value, 2),
-            'anomaly_name': anomaly_name,
-            'is_anomaly': True
-        })
-    
+
+        modified = value
+        triggered = None
+
+        for anom in active:
+            if sensor_type == "TEMPERATURE" and anom['type'] == "temperature_spike":
+                modified = self.apply_temperature_spike(modified, anom['params'], anom['progress'])
+                triggered = anom['name']
+            elif sensor_type == "HUMIDITY" and anom['type'] == "humidity_drop":
+                modified = self.apply_humidity_drop(modified, anom['params'], anom['progress'])
+                triggered = anom['name']
+            elif sensor_type == "MOISTURE" and anom['type'] == "moisture_drop":
+                modified = self.apply_moisture_drop(modified, anom['params'], anom['progress'])
+                triggered = anom['name']
+            elif anom['type'] == "erratic_readings":
+                modified = self.apply_erratic_readings(modified, anom['params'], anom['progress'])
+                triggered = anom['name']
+
+        if triggered:
+            self.ground_truth_log.append({
+                "minute": int(current_minute),
+                "plot_id": plot_id,
+                "sensor_type": sensor_type.upper(),
+                "original_value": round(value, 2),
+                "modified_value": round(modified, 2),
+                "anomaly_name": triggered,
+                "timestamp": (config.SIMULATION_START_DATETIME + timedelta(minutes=current_minute)).isoformat()
+            })
+
+        return modified, triggered
+
     def save_ground_truth(self):
-        """
-        ✨ NOUVEAU : Sauvegarde le log des anomalies dans un fichier JSON
-        """
         with open(self.log_file, 'w') as f:
             json.dump(self.ground_truth_log, f, indent=2)
-        
-        print(f"✅ Ground truth saved to {self.log_file}")
-        print(f"   Total anomalies logged: {len(self.ground_truth_log)}")
-    
-    def get_ground_truth_summary(self):
-        """
-        ✨ NOUVEAU : Retourne un résumé des anomalies injectées
-        """
-        if not self.ground_truth_log:
-            return "No anomalies logged yet"
-        
-        by_type = {}
-        by_scenario = {}
-        
-        for entry in self.ground_truth_log:
-            sensor = entry['sensor_type']
-            scenario = entry['anomaly_name']
-            
-            by_type[sensor] = by_type.get(sensor, 0) + 1
-            by_scenario[scenario] = by_scenario.get(scenario, 0) + 1
-        
-        return {
-            'total_anomalies': len(self.ground_truth_log),
-            'by_sensor_type': by_type,
-            'by_scenario': by_scenario
-        }
+        print(f"Ground truth saved → {self.log_file} ({len(self.ground_truth_log)} events)")

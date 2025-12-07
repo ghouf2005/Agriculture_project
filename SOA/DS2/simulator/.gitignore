@@ -1,2 +1,3 @@
 # Environment variables
 .env
+.anomalies_ground_truth.json

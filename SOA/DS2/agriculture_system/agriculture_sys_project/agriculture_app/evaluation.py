@@ -6,7 +6,8 @@ import numpy as np
 import json
 from pathlib import Path
 from datetime import timedelta
-from .models import SensorReading, AnomalyEvent
+from collections import Counter
+from .models import SensorReading
 
 
 def evaluate_model_performance(ground_truth_labels, predicted_labels):
@@ -42,60 +43,69 @@ def evaluate_model_performance(ground_truth_labels, predicted_labels):
     }
 
 
-def create_test_dataset_from_simulator():
-    """
-    Crée un dataset de test basé sur les données du simulateur
-    Utilise le fichier ground truth généré par anomaly_injector
-    
-    Returns:
-        tuple: (ground_truth, predictions)
-    """
-    # Charger le ground truth depuis le fichier JSON
-    ground_truth_file = Path('simulator/anomalies_ground_truth.json')
-    
+def _load_ground_truth_map():
+    """Charge le log du simulateur et retourne un set clé (plot, sensor, minute)."""
+    # Base dir = DS2 (parent of agriculture_system and simulator)
+    base_dir = Path(__file__).resolve().parents[3]
+    ground_truth_file = base_dir / 'simulator' / 'anomalies_ground_truth.json'
     if not ground_truth_file.exists():
-        print("⚠️ Ground truth file not found. Run simulator first.")
-        return [], []
-    
-    with open(ground_truth_file, 'r') as f:
-        ground_truth_data = json.load(f)
-    
-    # Récupérer toutes les lectures
-    all_readings = SensorReading.objects.order_by('timestamp')
-    
+        print(f"⚠️ Ground truth file not found at {ground_truth_file}. Run simulator first.")
+        return None
+    data = json.loads(ground_truth_file.read_text())
+    return {(e['plot_id'], e['sensor_type'], e['minute']) for e in data}
+
+
+def create_test_dataset_from_simulator(limit=None):
+    """
+    Dataset de test pour le modèle ML uniquement, basé sur le ground truth du simulateur.
+    Mapping lecture→minute est approximé via l'ordre des lectures et le nombre de plots/senseurs.
+    """
+    gt_set = _load_ground_truth_map()
+    if gt_set is None:
+        return [], [], {}
+
+    all_readings = list(SensorReading.objects.order_by('timestamp'))
+    if limit:
+        all_readings = all_readings[:limit]
+
+    if not all_readings:
+        print("⚠️ Aucune lecture en base pour l'évaluation")
+        return [], [], {}
+
+    # Caler le temps simulé : minute 0 = première lecture arrondie à la minute
+    start_ts = all_readings[0].timestamp.replace(second=0, microsecond=0)
+
     ground_truth = []
     predictions = []
-    
-    # Créer un dictionnaire pour recherche rapide
-    gt_dict = {}
-    for entry in ground_truth_data:
-        key = f"{entry['plot_id']}_{entry['sensor_type']}_{entry['minute']}"
-        gt_dict[key] = True
-    
-    simulated_minute = 0
+
+    from .ml_module import anomaly_detector
+
     for reading in all_readings:
-        # Ground truth : Vérifier dans le log
-        key = f"{reading.plot_id}_{reading.sensor_type}_{simulated_minute}"
-        is_gt_anomaly = gt_dict.get(key, False)
+        # Minutes écoulées depuis le début de la simulation (aligné avec ground truth)
+        delta_minutes = int((reading.timestamp - start_ts).total_seconds() // 60)
+        key = (reading.plot_id, reading.sensor_type, delta_minutes)
+        is_gt_anomaly = key in gt_set
         ground_truth.append(1 if is_gt_anomaly else 0)
-        
-        # Prédiction : Analyser la lecture
-        from .ml_module import anomaly_detector
+
         analysis = anomaly_detector.analyze_reading(reading)
         predictions.append(1 if analysis['has_anomaly'] else 0)
-        
-        simulated_minute += 1  # Approximation simple
-    
-    return ground_truth, predictions
+
+    stats = {
+        "total_readings": len(all_readings),
+        "gt_anomalies": sum(ground_truth),
+        "pred_anomalies": sum(predictions),
+    }
+
+    return ground_truth, predictions, stats
 
 
-def generate_evaluation_report():
+def generate_evaluation_report(limit=None):
     """
-    Génère un rapport d'évaluation complet
+    Génère un rapport d'évaluation complet pour le modèle ML uniquement
     """
     print("📊 Génération du rapport d'évaluation...")
     
-    ground_truth, predictions = create_test_dataset_from_simulator()
+    ground_truth, predictions, stats = create_test_dataset_from_simulator(limit=limit)
     
     if len(ground_truth) == 0:
         print("⚠️ Aucune donnée disponible pour l'évaluation")
@@ -109,6 +119,8 @@ def generate_evaluation_report():
     print(f"Total d'échantillons : {len(ground_truth)}")
     print(f"Anomalies réelles : {sum(ground_truth)}")
     print(f"Anomalies détectées : {sum(predictions)}")
+    if stats:
+        print(f"Total lectures DB : {stats['total_readings']}")
     print(f"\n--- Métriques ---")
     print(f"Précision : {metrics['precision']:.1%}")
     print(f"Rappel : {metrics['recall']:.1%}")

@@ -1,13 +1,13 @@
 import time
 import numpy as np
 from faker import Faker
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import requests
 import os
 from dotenv import load_dotenv
 import config
-from anomaly_injector import AnomalyInjector  # ← NOUVEAU
+from anomaly_injector import AnomalyInjector  # ← your anomaly injector
 
 # ------------------------------------------------------------
 # Load environment variables
@@ -87,7 +87,7 @@ def refresh_access_token():
 # ------------------------------------------------------------
 current_access = ACCESS_TOKEN
 
-def send_to_api(plot_id, sensor_type, value):
+def send_to_api(plot_id, sensor_type, value, timestamp):
     global current_access
 
     if not SENSOR_ENDPOINT:
@@ -103,6 +103,7 @@ def send_to_api(plot_id, sensor_type, value):
         "plot": plot_id,
         "sensor_type": normalized_type,
         "value": round(value, 2),
+        "timestamp": timestamp.isoformat(),  # Add timestamp in ISO format
     }
 
     headers = {"Content-Type": "application/json"}
@@ -129,7 +130,9 @@ def send_to_api(plot_id, sensor_type, value):
                     timeout=5,
                 )
 
-        print(f"[API] Plot {plot_id} {sensor_type}={value:.2f} → {r.status_code}")
+        print(
+            f"[API] Plot {plot_id} {sensor_type}={value:.2f} @ {timestamp.strftime('%Y-%m-%d %H:%M')} → {r.status_code}"
+        )
     except Exception as e:
         print(f"❌ API error: {e}")
 
@@ -138,78 +141,77 @@ def send_to_api(plot_id, sensor_type, value):
 # Main simulator with anomaly injection
 # ------------------------------------------------------------
 def run_simulator():
-    print("🌱 Sensor Simulator with Anomaly Injection...")
-    
-    # ✨ NOUVEAU: Initialiser l'injecteur d'anomalies
+    print("Sensor Simulator – Farm-shared Temperature/Humidity + Realistic Anomalies")
+
+    # Farm-wide weather offsets (same weather per farm)
+    farms = set(config.PLOT_FARM_MAP.values())
+    farm_temp_offset = {f: np.random.uniform(-0.6, 0.6) for f in farms}
+    farm_hum_offset  = {f: np.random.uniform(-2.0, 2.0) for f in farms}
+
     injector = AnomalyInjector()
-    
-    moisture_levels = {plot: np.random.uniform(*config.BASE_MOISTURE_RANGE) for plot in config.PLOT_IDS}
-    device_ids = {plot: fake.uuid4() for plot in config.PLOT_IDS}
-    
-    # Tracking des anomalies
-    anomalies_log = []
-    
-    temperature_data = {plot: [] for plot in config.PLOT_IDS}
-    humidity_data = {plot: [] for plot in config.PLOT_IDS}
-    moisture_data = {plot: [] for plot in config.PLOT_IDS}
+    injector.configure_for_plots(config.PLOT_IDS, config.PLOT_FARM_MAP)
+
+    moisture_levels = {p: np.random.uniform(*config.BASE_MOISTURE_RANGE) for p in config.PLOT_IDS}
+    device_ids = {p: fake.uuid4() for p in config.PLOT_IDS}
+
+    temperature_data = {p: [] for p in config.PLOT_IDS}
+    humidity_data    = {p: [] for p in config.PLOT_IDS}
+    moisture_data    = {p: [] for p in config.PLOT_IDS}
     time_points = []
-    
+    anomalies_log = []
+
     simulated_minutes = 0
-    
+    start_time = config.SIMULATION_START_DATETIME
+
     while simulated_minutes < config.TOTAL_SIM_MINUTES:
-        print(f"\n⏱ Simulated minute: {simulated_minutes} | Real time: {datetime.now()}")
-        time_points.append(simulated_minutes)
-        
-        # ✨ Afficher les anomalies actives
-        active_anomalies = injector.get_active_anomalies(simulated_minutes)
-        if active_anomalies:
-            anomaly_names = [a['name'] for a in active_anomalies]
-            print(f"🚨 ACTIVE ANOMALIES: {anomaly_names}")
-        
+        current_time = start_time + timedelta(minutes=simulated_minutes)
+        time_points.append(current_time)
+
         for plot in config.PLOT_IDS:
-            # Générer valeurs normales
-            temp = generate_temperature(simulated_minutes)
-            hum = generate_humidity(simulated_minutes)
+            farm_id = config.PLOT_FARM_MAP.get(plot, f"farm_{plot}")
+
+            # === Baseline with farm-shared base ===
+            temp = generate_temperature(simulated_minutes) + farm_temp_offset.get(farm_id, 0)
+            hum  = generate_humidity(simulated_minutes)  + farm_hum_offset.get(farm_id, 0)
+
+            # tiny per-reading noise
+            temp += np.random.uniform(-0.3, 0.3)
+            hum  += np.random.uniform(-1.0, 1.0)
+
             moisture_levels[plot] = generate_moisture(moisture_levels[plot])
-            
-            # ✨ APPLIQUER LES ANOMALIES
-            temp, temp_anomaly = injector.modify_sensor_value('TEMPERATURE', temp, simulated_minutes)
-            hum, hum_anomaly = injector.modify_sensor_value('HUMIDITY', hum, simulated_minutes)
-            moisture_levels[plot], moist_anomaly = injector.modify_sensor_value(
-                'MOISTURE', moisture_levels[plot], simulated_minutes
-            )
-            
-            # Logger les anomalies injectées
-            if any([temp_anomaly, hum_anomaly, moist_anomaly]):
+
+            # === Inject anomalies ===
+            temp, temp_anom = injector.modify_sensor_value("TEMPERATURE", temp, simulated_minutes, plot)
+            hum,  hum_anom  = injector.modify_sensor_value("HUMIDITY",   hum,  simulated_minutes, plot)
+            moisture_levels[plot], moist_anom = injector.modify_sensor_value("MOISTURE", moisture_levels[plot], simulated_minutes, plot)
+
+            if any([temp_anom, hum_anom, moist_anom]):
                 anomalies_log.append({
-                    'minute': simulated_minutes,
-                    'plot': plot,
-                    'temp_anomaly': temp_anomaly,
-                    'hum_anomaly': hum_anomaly,
-                    'moist_anomaly': moist_anomaly
+                    "minute": simulated_minutes,
+                    "plot": plot,
+                    "temp_anomaly": temp_anom,
+                    "hum_anomaly": hum_anom,
+                    "moist_anomaly": moist_anom,
                 })
-                print(f"   💥 Anomaly injected on Plot {plot}")
-            
-            # Sauvegarder pour graphiques
+
+            # Store & send
             temperature_data[plot].append(temp)
             humidity_data[plot].append(hum)
             moisture_data[plot].append(moisture_levels[plot])
-            
-            # Console
-            print(
-                f"Plot {plot} | Device: {device_ids[plot]} → "
-                f"Temp: {temp:.2f}°C | Humidity: {hum:.2f}% | Moisture: {moisture_levels[plot]:.2f}%"
-            )
-            
-            # Envoyer à l'API
-            send_to_api(plot, "temperature", temp)
-            send_to_api(plot, "humidity", hum)
-            send_to_api(plot, "moisture", moisture_levels[plot])
-        
+
+            for stype, val in [("temperature", temp), ("humidity", hum), ("moisture", moisture_levels[plot])]:
+                send_to_api(plot, stype, val, current_time)
+
+            print(f"Plot {plot} | Farm {farm_id} → T:{temp:5.2f}°C  H:{hum:5.2f}%  M:{moisture_levels[plot]:5.2f}%")
+
         simulated_minutes += config.MINUTES_PER_STEP
         time.sleep(config.READING_INTERVAL_SEC)
-    
-    # ✨ Rapport final
+
+    injector.save_ground_truth()
+
+    # ------------------------------------------------------------
+    # Final report
+    # ------------------------------------------------------------
     print(f"\n\n{'='*60}")
     print(f"📊 SIMULATION COMPLETE")
     print(f"{'='*60}")
@@ -217,41 +219,51 @@ def run_simulator():
     print(f"Anomaly scenarios used:")
     for scenario in injector.anomaly_scenarios:
         print(f"  - {scenario}")
-    
+
     # ------------------------------------------------------------
-    # Graphiques avec anomalies marquées
+    # Plotting
     # ------------------------------------------------------------
     fig, axes = plt.subplots(3, 1, figsize=(14, 10))
-    
+
     for plot in config.PLOT_IDS:
-        # Température
+        # Temperature
         axes[0].plot(time_points, temperature_data[plot], label=f"Plot {plot}", alpha=0.7)
         axes[0].set_ylabel("Temperature (°C)")
         axes[0].set_title("Temperature Over Time")
         axes[0].legend()
         axes[0].grid(True, alpha=0.3)
-        
-        # Humidité
+
+        # Humidity
         axes[1].plot(time_points, humidity_data[plot], label=f"Plot {plot}", alpha=0.7)
         axes[1].set_ylabel("Humidity (%)")
         axes[1].set_title("Humidity Over Time")
         axes[1].legend()
         axes[1].grid(True, alpha=0.3)
-        
+
         # Moisture
         axes[2].plot(time_points, moisture_data[plot], label=f"Plot {plot}", alpha=0.7)
         axes[2].set_ylabel("Soil Moisture (%)")
         axes[2].set_title("Soil Moisture Over Time")
-        axes[2].set_xlabel("Simulated Minutes")
+        axes[2].set_xlabel("Time")
         axes[2].legend()
         axes[2].grid(True, alpha=0.3)
-    
-    # Marquer les zones d'anomalies
-    for scenario_name, config_anom in injector.anomaly_scenarios.items():
-        for ax in axes:
-            ax.axvspan(config_anom['start'], config_anom['end'], 
-                      alpha=0.2, color='red', label=f'{scenario_name}' if ax == axes[0] else '')
-    
+
+    # Highlight anomaly windows (use the randomized base windows for this run)
+    for scenario_name, windows in injector.base_windows.items():
+        for window in windows:
+            for ax in axes:
+                ax.axvspan(
+                    start_time + timedelta(minutes=window['start']),
+                    start_time + timedelta(minutes=window['end']),
+                    alpha=0.2, color='red',
+                    label=f'{scenario_name}' if ax == axes[0] else ''
+                )
+
+    # Format X-axis with HH:MM
+    for ax in axes:
+        ax.xaxis_date()
+        ax.xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%H:%M'))
+
     plt.tight_layout()
     plt.show()
 

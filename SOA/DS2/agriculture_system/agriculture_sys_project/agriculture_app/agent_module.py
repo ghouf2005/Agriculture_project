@@ -59,20 +59,16 @@ def generate_recommendation(anomaly_event: AnomalyEvent):
     recommendation, created = AgentRecommendation.objects.get_or_create(
         anomaly_event=anomaly_event,
         defaults={
-            "timestamp": anomaly_event.timestamp,  # seed to satisfy NOT NULL
-            "recommended_action": decision['action'],
+            "timestamp": anomaly_event.timestamp,
+            "simulated_time": anomaly_event.simulated_time,
+            "recommended_action": decision["action"],
             "explanation_text": explanation,
-            "confidence": decision['confidence'],
+            "confidence": decision["confidence"],
         },
     )
 
     if not created:
         return recommendation
-    
-    # Calculate processing latency and the new conceptual timestamp
-    processing_latency = recommendation.created_at - anomaly_event.created_at
-    recommendation.timestamp = anomaly_event.timestamp + processing_latency
-    recommendation.save(update_fields=['timestamp']) # Efficiently save only the changed field
 
     print(f"✅ Agent created recommendation for anomaly {anomaly_event.id}")
 

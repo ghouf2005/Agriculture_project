@@ -1,41 +1,66 @@
-from datetime import datetime
+# config.py
+# (only the bottom part changed: we add SENSOR_DRIFT to ENABLED_ANOMALIES)
 
 # ======================================================
-# Plot configuration
+# Plot configuration 
 # ======================================================
-PLOT_IDS = [1, 2, 3, 4]
+PLOT_IDS = [1, 2, 3, 4]  # Must exist in database
 
-PLOT_FARM_MAP = {
-    1: "farmA",
-    2: "farmA",
-    3: "farmB",
-    4: "farmB",
-}
 
 # ======================================================
-# Simulation time
+# Time configuration
 # ======================================================
-SIMULATION_START_DATETIME = datetime(2025, 1, 9, 6, 0, 0)
+READING_INTERVAL_SEC = 1        # every 1 real second
+MINUTES_PER_STEP = 5            # equals 5 minutes of simulated time
+TOTAL_SIM_MINUTES = 24 * 60     # simulate a full day
+START_DATE = "2025-01-01T06:00:00"  #Starting simulated datetime (ISO format)
 
-READING_INTERVAL_SEC = 1
-MINUTES_PER_STEP = 5
-TOTAL_SIM_MINUTES = 24 * 60
+# ======================================================
+# Normal base ranges
+# ======================================================
+BASE_MOISTURE_RANGE = (45, 75)      # %
+BASE_TEMPERATURE_RANGE = (18, 28)   # °C
+BASE_HUMIDITY_RANGE = (45, 75)      # %
+
 
 # ======================================================
-# Normal ranges
+# Diurnal cycle parameters (Day/night)
 # ======================================================
-BASE_MOISTURE_RANGE = (45, 75)
-TEMP_DAY_PEAK, TEMP_NIGHT_LOW = 28, 18
-HUM_DAY_LOW, HUM_NIGHT_HIGH = 45, 75
 DAY_LENGTH_MINUTES = 24 * 60
 
-# Reduced noise because we now have farm offsets
-TEMP_NOISE_MAX = 0.3
-HUM_NOISE_MAX = 1.5
-MOISTURE_NOISE_MAX = 1.0
+# Temperature day/night curve
+TEMP_DAY_PEAK = 28       # hottest point
+TEMP_NIGHT_LOW = 18      # coldest point
+
+# Humidity inverse to temperature
+HUM_DAY_LOW = 45
+HUM_NIGHT_HIGH = 75
+
 
 # ======================================================
-# Anomaly multiplicity — keep sparse to favor normal data
+# Random noise (small variations)
 # ======================================================
-MIN_ANOMALIES_PER_TYPE = 0
-MAX_ANOMALIES_PER_TYPE = 1
+MOISTURE_NOISE_MAX = 1.0    # %
+TEMP_NOISE_MAX = 0.7        # °C
+HUM_NOISE_MAX = 3.0         # %
+
+
+USE_FAKE_DEVICE_IDS = True
+
+# ======================================================
+# ANOMALY INJECTION (Day 3)
+# ======================================================
+
+ANOMALY_CHANCE = 0.05 # 5% chance each iteration
+
+ENABLED_ANOMALIES = [
+    "HIGH_TEMPERATURE",
+    "LOW_TEMPERATURE",
+    "HIGH_HUMIDITY",
+    "LOW_HUMIDITY",
+    "HIGH_MOISTURE",
+    "LOW_MOISTURE",
+    "SENSOR_FREEZE",
+    "NOISE_INJECTION",
+    "SENSOR_DRIFT",     # new gradual drift anomaly
+]

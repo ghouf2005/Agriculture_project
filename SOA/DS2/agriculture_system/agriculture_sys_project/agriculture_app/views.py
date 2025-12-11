@@ -1,16 +1,23 @@
-from rest_framework import generics, permissions, status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-
-from .models import FarmProfile, FieldPlot, SensorReading, AnomalyEvent, AgentRecommendation
+# views.py
+# Updated to use MLAnomalyDetector with proper feature engineering
+from rest_framework import generics, permissions
+from .enumerations import AnomalyType, SeverityLevel, AgentConfidence  # Added AgentConfidence
+from .ml_model import get_detector
+from .agent_module import generate_recommendation  # Import the recommendation generator
+from .models import (
+    FarmProfile,
+    FieldPlot,
+    SensorReading,
+    AnomalyEvent,
+    AgentRecommendation,
+)
 from .serializers import (
     FarmProfileSerializer,
     FieldPlotSerializer,
     SensorReadingSerializer,
     AnomalyEventSerializer,
-    AgentRecommendationSerializer
+    AgentRecommendationSerializer,
 )
-from .services import process_sensor_reading, train_model_for_plot, get_anomaly_statistics
 
 
 # ---------------------------------------------------
@@ -37,25 +44,100 @@ class PlotByFarmView(generics.ListAPIView):
 
 
 # ---------------------------------------------------
-# POST SENSOR DATA WITH ML ANALYSIS
-# POST /api/sensor-readings/create/
+# POST SENSOR DATA (Simulator → Django)
+# POST /api/sensor-readings/
 # ---------------------------------------------------
 class SensorReadingCreateView(generics.CreateAPIView):
     serializer_class = SensorReadingSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]  # simulator must authenticate
 
     def perform_create(self, serializer):
-        # Sauvegarder la lecture
-        reading = serializer.save()
+        instance = serializer.save()
+
+        # -------------------------------
+        # Get detector for this sensor type
+        # -------------------------------
+        detector = get_detector(instance.sensor_type)
         
-        # ✨ NOUVEAU : Analyser avec le ML module
-        results = process_sensor_reading(reading)
-        
-        # Log les résultats
-        if results['anomaly_created']:
-            print(f"✅ Anomalie créée : ID {results['anomaly_event'].id}")
+        if detector is None:
+            print(f"⚠ ML model missing for {instance.sensor_type}, skipping anomaly detection")
+            return
+
+        # -------------------------------
+        # Predict anomaly using proper feature engineering
+        # The detector maintains context per plot automatically
+        # -------------------------------
+        plot_id = instance.plot.id
+        is_anomaly, confidence_score = detector.predict(
+            plot_id=plot_id,
+            sensor_type=instance.sensor_type,
+            value=instance.value
+        )
+
+        # -------------------------------
+        # Detect anomaly with improved threshold
+        # Using confidence_score (already normalized) with threshold
+        # Higher threshold for humidity to avoid false positives from natural daily cycles
+        # -------------------------------
+        # Threshold: require minimum confidence to reduce false positives
+        # Higher threshold for humidity to avoid false positives from natural daily cycles
+        if instance.sensor_type == "TEMPERATURE":
+             threshold = 0.15
+        elif instance.sensor_type == "HUMIDITY":
+             threshold = 0.2
+        elif instance.sensor_type == "MOISTURE":
+             threshold = 0.12
         else:
-            print(f"✅ Lecture normale : {reading.sensor_type} = {reading.value}")
+             threshold = 0.15
+
+        if is_anomaly and confidence_score >= threshold:
+            print(
+                f"🔥 Anomaly detected: {instance.sensor_type} "
+                f"value={instance.value:.2f} plot={plot_id} "
+                f"confidence={confidence_score:.4f}"
+            )
+
+            # Determine anomaly type based on value and sensor type
+            anomaly_map = {
+                "TEMPERATURE": (
+                    AnomalyType.HIGH_TEMPERATURE
+                    if instance.value > 28
+                    else AnomalyType.LOW_TEMPERATURE
+                ),
+                "HUMIDITY": (
+                    AnomalyType.HIGH_HUMIDITY
+                    if instance.value > 75
+                    else AnomalyType.LOW_HUMIDITY
+                ),
+                "MOISTURE": (
+                    AnomalyType.HIGH_MOISTURE
+                    if instance.value > 75
+                    else AnomalyType.LOW_MOISTURE
+                ),
+            }
+            anomaly_type = anomaly_map[instance.sensor_type]
+
+            # Determine severity based on confidence score
+            if confidence_score < 0.2:
+                severity = SeverityLevel.LOW
+            elif confidence_score < 0.4:
+                severity = SeverityLevel.MEDIUM
+            else:
+                severity = SeverityLevel.HIGH
+
+            # Create anomaly event with simulated_time copied from the reading
+            anomaly_event = AnomalyEvent.objects.create(
+                simulated_time=instance.simulated_time,  # Direct copy from the reading
+                plot=instance.plot,
+                anomaly_type=anomaly_type,
+                severity=severity,
+                model_confidence=min(confidence_score, 1.0),  # Cap at 1.0
+            )
+            
+            print(f"✅ Created AnomalyEvent #{anomaly_event.id} with severity {severity}")
+
+            # Trigger AI agent to create recommendation (from agent_module.py)
+            generate_recommendation(anomaly_event)  # This creates and saves AgentRecommendation
 
 
 # ---------------------------------------------------
@@ -104,61 +186,3 @@ class RecommendationListView(generics.ListAPIView):
         if anomaly_id:
             qs = qs.filter(anomaly_event_id=anomaly_id)
         return qs
-
-
-# ---------------------------------------------------
-# ✨ NOUVEAU : TRAIN ML MODEL
-# POST /api/ml/train/?plot=<id>
-# ---------------------------------------------------
-class TrainModelView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def post(self, request):
-        plot_id = request.query_params.get('plot')
-        
-        if not plot_id:
-            return Response(
-                {'error': 'plot parameter required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Vérifier que le plot existe
-        try:
-            plot = FieldPlot.objects.get(id=plot_id)
-        except FieldPlot.DoesNotExist:
-            return Response(
-                {'error': 'Plot not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        # Entraîner le modèle
-        min_samples = request.data.get('min_samples', 100)
-        success = train_model_for_plot(plot_id, min_samples)
-        
-        if success:
-            return Response({
-                'message': f'Model trained successfully for plot {plot_id}',
-                'plot': plot.name
-            })
-        else:
-            return Response(
-                {'error': 'Not enough data to train model'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-
-# ---------------------------------------------------
-# ✨ NOUVEAU : ANOMALY STATISTICS
-# GET /api/anomalies/stats/?plot=<id>
-# ---------------------------------------------------
-class AnomalyStatsView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get(self, request):
-        plot_id = request.query_params.get('plot')
-        stats = get_anomaly_statistics(plot_id)
-        
-        return Response({
-            'plot_id': plot_id,
-            'statistics': stats
-        })

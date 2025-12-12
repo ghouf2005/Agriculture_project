@@ -51,7 +51,7 @@ USE_FAKE_DEVICE_IDS = True
 # ANOMALY INJECTION (Day 3)
 # ======================================================
 
-ANOMALY_CHANCE = 0.05
+ANOMALY_CHANCE = 0
 
 ENABLED_ANOMALIES = [
     "HIGH_TEMPERATURE",

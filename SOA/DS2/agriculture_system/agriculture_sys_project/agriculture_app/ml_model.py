@@ -1,6 +1,7 @@
 import os
 import joblib
 import numpy as np
+from scipy.special import expit
 from datetime import datetime
 from django.conf import settings
 
@@ -22,7 +23,7 @@ class MLAnomalyDetector:
         data = joblib.load(model_path)
         self.model = data["model"]
         self.scaler = data["scaler"]
-        self.window = data.get("feature_window", 5)
+        self.window = data.get("feature_window", 10)
 
         # Context storage: {plot_id: {sensor_type: [values]}}
         self.plot_contexts = {}
@@ -98,12 +99,14 @@ class MLAnomalyDetector:
         prediction = self.model.predict(X_scaled)[0]  # 1 = normal, -1 = anomaly
         score = self.model.decision_function(X_scaled)[0]  # negative = more anomalous
         
-        # Convert to anomaly score (higher = more anomalous)
-        # Isolation Forest returns negative scores for anomalies
-        anomaly_score = abs(score) if prediction == -1 else 0.0
+        # Normalize anomaly score [0-1] (higher = more anomalous)
+        # decision_function returns negative values for anomalies (e.g. -0.2)
+        # Multiply by -5 (less aggressive squashing than -10) to map to probability
+        raw_score = self.model.decision_function(X_scaled)[0]
+        anomaly_score = expit(-raw_score * 5) 
         
         is_anomaly = prediction == -1
-        
+
         return is_anomaly, float(anomaly_score)
 
     def explain(self, sensor_type, value, timestamp, score, plot_id):

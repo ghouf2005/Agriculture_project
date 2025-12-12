@@ -2,7 +2,7 @@ import os
 import django
 import pandas as pd
 import numpy as np
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, classification_report
+from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, classification_report, roc_auc_score
 
 # Django setup
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriculture_sys_project.settings")
@@ -11,9 +11,9 @@ django.setup()
 from agriculture_app.ml_model import get_detector
 
 print("📥 Loading dataset...")
-df = pd.read_csv("synthetic_dataset_with_labels.csv")
+df = pd.read_csv("ground_truth_anomalies.csv")
 
-FEATURE_WINDOW = 5  # Must match training script
+FEATURE_WINDOW = 10  # Must match training script
 
 
 def engineer_features(values):
@@ -63,30 +63,60 @@ def evaluate_sensor(sensor_type):
         print(f"⚠ No data found for {sensor_type}")
         return
 
-    print(f"📊 Evaluating on {len(sub)} samples")
+    print(f"📊 Evaluating on {len(sub)} samples from ground_truth_anomalies.csv")
     
-    # Get values and ground truth
-    values = sub["value"].values
-    y_true = sub["is_anomaly"].values
+    y_true_all = []
+    y_pred_all = []
+    scores_all = [] # Track scores for AUC
+
+    # Process per plot to maintain time-series structure for feature engineering
+    plots = sub["plot"].unique()
     
-    # Engineer features (same as training)
-    X = engineer_features(values)
+    for plot_id in plots:
+        sub_plot = sub[sub["plot"] == plot_id].sort_values("timestamp")
+        if len(sub_plot) < FEATURE_WINDOW * 2:
+            continue
+            
+        values = sub_plot["value"].values
+        y_true_plot = sub_plot["is_anomaly"].values
+        
+        # Engineer features per plot
+        X = engineer_features(values)
+        
+        # Scale
+        X_scaled = detector.scaler.transform(X)
+        
+        # Predict (-1 = anomaly, 1 = normal)
+        predictions = detector.model.predict(X_scaled)
+        
+        # Get raw decision function scores (negative = anomalous)
+        raw_scores = detector.model.decision_function(X_scaled) 
+        
+        # Convert to 0/1 (Anomaly=1, Normal=0)
+        y_pred_plot = np.where(predictions == -1, 1, 0)
+        
+        y_true_all.extend(y_true_plot)
+        y_pred_all.extend(y_pred_plot)
+        scores_all.extend(-raw_scores) # Invert so higher = more anomalous (for AUC)
     
-    if X.shape[1] != 5:
-        print(f"❌ Error: Expected 5 features, got {X.shape[1]}")
+    # Convert to arrays
+    y_true = np.array(y_true_all)
+    y_pred = np.array(y_pred_all)
+    y_scores = np.array(scores_all)
+    
+    if len(y_true) == 0:
+        print("⚠ No valid data segments found (too short?).")
         return
-    
-    # Scale features using the detector's scaler
-    X_scaled = detector.scaler.transform(X)
-    
-    # Predict using the model
-    predictions = detector.model.predict(X_scaled)  # -1 = anomaly, 1 = normal
-    y_pred = np.where(predictions == -1, 1, 0)  # Convert to 0/1
-    
+
     # Calculate metrics
     precision = precision_score(y_true, y_pred, zero_division=0)
     recall = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
+
+    # Calculate ROC-AUC (if both classes present)
+    auc_score = 0.0
+    if len(np.unique(y_true)) > 1:
+        auc_score = roc_auc_score(y_true, y_scores)
     
     # Confusion matrix
     cm = confusion_matrix(y_true, y_pred)
@@ -102,6 +132,7 @@ def evaluate_sensor(sensor_type):
     print(f"   Precision: {precision:.4f} ({precision*100:.2f}%)")
     print(f"   Recall:    {recall:.4f} ({recall*100:.2f}%)")
     print(f"   F1-score:  {f1:.4f} ({f1*100:.2f}%)")
+    print(f"   ROC-AUC:   {auc_score:.4f}")
     
     # Calculate false positive rate
     if (fp + tn) > 0:

@@ -94,12 +94,22 @@ class SensorReadingCreateView(generics.CreateAPIView):
         # Predict anomaly using proper feature engineering
         # The detector maintains context per plot automatically
         # -------------------------------
+        # -------------------------------
+        # Predict anomaly using proper feature engineering
+        # The detector maintains context per plot automatically
+        # -------------------------------
         plot_id = instance.plot.id
-        is_anomaly, confidence_score = detector.predict(
-            plot_id=plot_id,
-            sensor_type=instance.sensor_type,
-            value=instance.value
-        )
+        try:
+            is_anomaly, confidence_score = detector.predict(
+                plot_id=plot_id,
+                sensor_type=instance.sensor_type,
+                value=instance.value
+            )
+        except Exception as e:
+            # Fallback if model prediction fails (e.g. stale model file)
+            print(f"⚠ Prediction failed for {instance.sensor_type}: {e}")
+            is_anomaly = False
+            confidence_score = 0.0
 
         # -------------------------------
         # Detect anomaly with improved threshold
@@ -109,11 +119,11 @@ class SensorReadingCreateView(generics.CreateAPIView):
         # Threshold: require minimum confidence to reduce false positives
         # Higher threshold for humidity to avoid false positives from natural daily cycles
         if instance.sensor_type == "TEMPERATURE":
-             threshold = 0.15
+             threshold = 0.55
         elif instance.sensor_type == "HUMIDITY":
-             threshold = 0.2
+             threshold = 0.60
         elif instance.sensor_type == "MOISTURE":
-             threshold = 0.12
+             threshold = 0.52
         else:
              threshold = 0.15
 

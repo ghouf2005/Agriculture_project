@@ -3,7 +3,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-df = pd.read_csv("synthetic_dataset_with_labels.csv")
+df = pd.read_csv("ground_truth_anomalies.csv")
 
 
 COLORS = ["tab:blue", "tab:orange", "tab:green", "tab:red", "tab:purple", "tab:brown"]

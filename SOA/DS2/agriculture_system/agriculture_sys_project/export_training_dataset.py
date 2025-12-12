@@ -43,14 +43,24 @@ def export_dataset():
             )
             
             # Apply threshold (same as views.py)
-            ANOMALY_THRESHOLD = 0.1
-            is_anomaly = 1 if (is_anomaly_bool and confidence_score >= ANOMALY_THRESHOLD) else 0
+            # Apply threshold (same as views.py)
+            if r.sensor_type == "TEMPERATURE":
+                threshold = 0.55
+            elif r.sensor_type == "HUMIDITY":
+                threshold = 0.60
+            elif r.sensor_type == "MOISTURE":
+                threshold = 0.52
+            else:
+                threshold = 0.55
+            
+            is_anomaly = 1 if (is_anomaly_bool and confidence_score >= threshold) else 0
         
         rows.append({
             "timestamp": r.timestamp,
             "plot": r.plot_id,
             "sensor_type": r.sensor_type,
             "value": r.value,
+            "confidence_score": confidence_score,  # Export score for analysis
             "is_anomaly": is_anomaly,
         })
 

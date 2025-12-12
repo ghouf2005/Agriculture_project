@@ -16,7 +16,7 @@ from agriculture_app.models import SensorReading
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "agriculture_app")
 
-FEATURE_WINDOW = 5  # rolling window for trend features
+FEATURE_WINDOW = 10  # Increased for better drift detection  # rolling window for trend features
 
 
 def engineer_features(values):
@@ -54,29 +54,41 @@ def train_model(sensor_type, filename):
     print(f"📥 Training Isolation Forest for {sensor_type}...")
     print(f"{'='*60}")
 
-    qs = SensorReading.objects.filter(sensor_type=sensor_type).order_by("timestamp")
-    sample_count = qs.count()
+    # Instead of fetching everything sorted by timestamp (which interleaves plots),
+    # we must fetch by plot to preserve time-series continuity for rolling features.
     
-    if sample_count < 100:
-        print(f"⚠ Not enough samples for {sensor_type}. Need >= 100, got {sample_count}.")
+    # Get all unique plot IDs that have this sensor type
+    plot_ids = SensorReading.objects.filter(sensor_type=sensor_type).values_list('plot_id', flat=True).distinct()
+    
+    all_features = []
+    
+    print(f"   Processing {len(plot_ids)} plots...")
+    
+    for pid in plot_ids:
+        # Get readings for this plot, sorted by time
+        qs_plot = SensorReading.objects.filter(sensor_type=sensor_type, plot_id=pid).order_by("timestamp")
+        
+        if qs_plot.count() < FEATURE_WINDOW * 2:
+            continue
+            
+        values = np.array([x.value for x in qs_plot])
+        
+        # Engineer features for this plot's series
+        X_plot = engineer_features(values)
+        all_features.append(X_plot)
+        
+    if not all_features:
+        print(f"⚠ No sufficient data per plot for {sensor_type}.")
         return
-    
-    print(f"✅ Found {sample_count} samples for {sensor_type}")
 
-    # Extract values
-    values = np.array([x.value for x in qs])
-    print(f"   Value range: [{values.min():.2f}, {values.max():.2f}]")
-    print(f"   Mean: {values.mean():.2f}, Std: {values.std():.2f}")
-
-    # Engineer features
-    print(f"   Engineering features with window={FEATURE_WINDOW}...")
-    X = engineer_features(values)
+    # Stack all plot features into one big matrix
+    X = np.vstack(all_features)
     
     if X.shape[1] != 5:
         print(f"❌ Error: Expected 5 features, got {X.shape[1]}")
         return
     
-    print(f"   Feature matrix shape: {X.shape}")
+    print(f"   Combined Feature matrix shape: {X.shape}")
     print(f"   Features: [value, roll_mean, roll_std, diff, derivative]")
 
     # Scale features
@@ -85,10 +97,21 @@ def train_model(sensor_type, filename):
     print(f"   Scaled features - Mean: {X_scaled.mean(axis=0)}, Std: {X_scaled.std(axis=0)}")
 
     # Train Isolation Forest with improved parameters
-    print(f"   Training Isolation Forest...")
+    # Per-sensor contamination to balance precision/recall
+    # Auto-contamination: Estimate from data using a preliminary fit
+    prelim_model = IsolationForest(n_estimators=50, max_samples=256, random_state=42)
+    prelim_model.fit(X_scaled)
+    prelim_preds = prelim_model.predict(X_scaled)
+    # Estimate fraction of anomalies (clamped between 1% and 10%)
+    estimated_contamination = max(0.01, min(0.1, (prelim_preds == -1).mean()))
+    contamination = estimated_contamination
+
+    print(f"   Estimated contamination from data: {estimated_contamination:.4f}")
+
+    print(f"   Training Isolation Forest (contamination={contamination})...")
     model = IsolationForest(
         n_estimators=200,          # Reduced for faster training, still effective
-        contamination=0.03,        # Expect ~3% anomalies (significantly reduced to lower FP)
+        contamination=contamination,     # Dynamic per sensor
         max_samples=256,           # Sample size for each tree (balance speed/accuracy)
         max_features=1.0,          # Use all features
         bootstrap=False,           # No bootstrap for Isolation Forest

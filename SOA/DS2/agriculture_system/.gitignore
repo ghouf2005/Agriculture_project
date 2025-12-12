@@ -26,5 +26,13 @@ Thumbs.db
 
 # Environment variables
 .env
+# ML artifacts
+*.pkl
+
+# Generated plots
+*.png
+
+# Datasets
+*.csv
 
 agriculture_system/agriculture_sys_project/agriculture_sys_project/settings.py

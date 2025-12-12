@@ -31,6 +31,33 @@ class FarmListView(generics.ListAPIView):
 
 
 # ---------------------------------------------------
+# LIST ALL PLOTS
+# GET /api/plots/
+# ---------------------------------------------------
+class PlotListView(generics.ListAPIView):
+    queryset = FieldPlot.objects.all()
+    serializer_class = FieldPlotSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        plot_id = self.request.query_params.get("id")
+        if plot_id:
+            qs = qs.filter(id=plot_id)
+        return qs
+
+
+# ---------------------------------------------------
+# RETRIEVE SINGLE PLOT
+# GET /api/plots/<id>/
+# ---------------------------------------------------
+class PlotDetailView(generics.RetrieveAPIView):
+    queryset = FieldPlot.objects.all()
+    serializer_class = FieldPlotSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+# ---------------------------------------------------
 # LIST PLOTS OF A FARM
 # GET /api/farms/<farm_id>/plots/
 # ---------------------------------------------------

@@ -199,7 +199,16 @@ def run_simulator():
 
         current_time += timedelta(minutes=config.MINUTES_PER_STEP)
         time.sleep(config.READING_INTERVAL_SEC)
-
+    
+    # ✨ Rapport final
+    print(f"\n\n{'='*60}")
+    print(f"📊 SIMULATION COMPLETE")
+    print(f"{'='*60}")
+    print(f"Total anomalies injected: {len(anomalies_log)}")
+    print(f"Anomaly scenarios used:")
+    for scenario in injector.anomaly_scenarios:
+        print(f"  - {scenario}")
+    
     # ------------------------------------------------------------
     # Plot graphs after simulation ends
     # ------------------------------------------------------------

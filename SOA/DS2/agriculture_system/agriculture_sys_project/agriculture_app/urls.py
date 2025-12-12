@@ -1,6 +1,8 @@
 from django.urls import path
 from .views import (
     FarmListView,
+    PlotListView,
+    PlotDetailView,
     PlotByFarmView,
     SensorReadingCreateView,
     SensorReadingListView,
@@ -11,6 +13,8 @@ from .views import (
 urlpatterns = [
     # Farms
     path("farms/", FarmListView.as_view(), name="farm-list"),
+    path("plots/", PlotListView.as_view(), name="plot-list"),
+    path("plots/<int:pk>/", PlotDetailView.as_view(), name="plot-detail"),
     path("farms/<int:farm_id>/plots/", PlotByFarmView.as_view(), name="plots-by-farm"),
 
     # Sensor Readings

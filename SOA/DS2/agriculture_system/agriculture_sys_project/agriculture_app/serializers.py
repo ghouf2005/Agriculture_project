@@ -14,6 +14,8 @@ class FarmProfileSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class FieldPlotSerializer(serializers.ModelSerializer):
+    farm_name = serializers.CharField(source="farm.location", read_only=True)
+
     class Meta:
         model = FieldPlot
         fields = '__all__'

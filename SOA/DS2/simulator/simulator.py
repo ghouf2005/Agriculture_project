@@ -204,6 +204,7 @@ def run_simulator():
                 send_to_api(plot, "TEMPERATURE", temp, current_time)
                 send_to_api(plot, "HUMIDITY", hum, current_time)
                 send_to_api(plot, "MOISTURE", moisture_levels[plot], current_time)
+
                 # End anomaly step after all sensors processed
                 anomaly_engine.end_step(plot)
 
@@ -245,7 +246,6 @@ def run_simulator():
                     "is_anomaly": is_moist_anom,
                     "anomaly_type": anomaly_type if is_moist_anom else "NONE"
                 })
->>>>>>> Stashed changes
 
             current_time += timedelta(minutes=config.MINUTES_PER_STEP)
             time.sleep(config.READING_INTERVAL_SEC)

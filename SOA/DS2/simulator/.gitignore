@@ -1,3 +1,12 @@
 # Environment variables
 .env
 .anomalies_ground_truth.json
+
+# Generated plots
+*.png
+
+# Datasets
+*.csv
+
+# Environment
+.env

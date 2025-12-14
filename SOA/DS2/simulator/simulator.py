@@ -1,6 +1,7 @@
 # simulator.py
 import time
 import numpy as np
+import pandas as pd
 from faker import Faker
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
@@ -125,17 +126,22 @@ def send_to_api(plot_id, sensor_type, value, current_time):
         response = requests.post(SENSOR_ENDPOINT, json=payload, headers=headers)
         response.raise_for_status()
         print(f"✅ Sent {sensor_type} for Plot {plot_id} → {response.status_code}")
-    except requests.exceptions.HTTPError as e:
-        if response.status_code == 401:
+    except requests.exceptions.RequestException as e:
+        # Catch ConnectionError, Timeout, HTTPError, etc.
+        if isinstance(e, requests.exceptions.HTTPError) and hasattr(e, 'response') and e.response.status_code == 401:
             if refresh_token():
                 headers["Authorization"] = f"Bearer {ACCESS_TOKEN}"
-                response = requests.post(SENSOR_ENDPOINT, json=payload, headers=headers)
-                response.raise_for_status()
-                print(f"✅ Retried after refresh: Sent {sensor_type} for Plot {plot_id} → {response.status_code}")
+                try:
+                    response = requests.post(SENSOR_ENDPOINT, json=payload, headers=headers)
+                    response.raise_for_status()
+                    print(f"✅ Retried after refresh: Sent {sensor_type} for Plot {plot_id} → {response.status_code}")
+                except requests.exceptions.RequestException as retry_e:
+                     print(f"❌ Retry failed for {sensor_type}: {retry_e}")
             else:
                 print(f"❌ Refresh failed for {sensor_type} — update .env and rerun.")
         else:
-            print(f"❌ API error for Plot {plot_id} {sensor_type}: {e}")
+            # Just print error and continue (don't crash simulation)
+            print(f"⚠ API Error (Plot {plot_id} {sensor_type}): {e}")
 
 # ------------------------------------------------------------
 # Main simulation loop
@@ -144,6 +150,7 @@ def run_simulator():
     anomaly_engine = AnomalyEngine()
 
     # Initialize data trackers
+    ground_truth = []  # <--- NEW: Track ground truth for evaluation
     temperature_data = {p: [] for p in config.PLOT_IDS}
     humidity_data = {p: [] for p in config.PLOT_IDS}
     moisture_data = {p: [] for p in config.PLOT_IDS}
@@ -155,111 +162,162 @@ def run_simulator():
     time_points = []  # List of datetimes for plotting
 
     # Simulate until total minutes reached (now in hourly steps)
-    while (current_time - datetime.fromisoformat(config.START_DATE)).total_seconds() / 60 < config.TOTAL_SIM_MINUTES:
-        print(f"\n⏱ Simulated time: {current_time}")
-        time_points.append(current_time)
+    try:
+        while (current_time - datetime.fromisoformat(config.START_DATE)).total_seconds() / 60 < config.TOTAL_SIM_MINUTES:
+            print(f"\n⏱ Simulated time: {current_time}")
+            time_points.append(current_time)
 
-        for plot in config.PLOT_IDS:
-            # Generate base values (pass current_time)
-            raw_temp = generate_temperature(current_time)
-            prev_temp = temperature_data[plot][-1] if temperature_data[plot] else None
-            base_temp = smooth(prev_temp, raw_temp, alpha=0.1)
+            for plot in config.PLOT_IDS:
+                # Generate base values (pass current_time)
+                raw_temp = generate_temperature(current_time)
+                prev_temp = temperature_data[plot][-1] if temperature_data[plot] else None
+                base_temp = smooth(prev_temp, raw_temp, alpha=0.1)
 
-            raw_hum = generate_humidity(current_time)
-            prev_hum = humidity_data[plot][-1] if humidity_data[plot] else None
-            base_hum = smooth(prev_hum, raw_hum, alpha=0.1)
+                raw_hum = generate_humidity(current_time)
+                prev_hum = humidity_data[plot][-1] if humidity_data[plot] else None
+                base_hum = smooth(prev_hum, raw_hum, alpha=0.1)
 
-            raw_moisture = generate_moisture(moisture_levels[plot])
-            base_moisture = smooth(moisture_levels[plot], raw_moisture, alpha=0.1)
-            moisture_levels[plot] = base_moisture
+                raw_moisture = generate_moisture(moisture_levels[plot])
+                base_moisture = smooth(moisture_levels[plot], raw_moisture, alpha=0.1)
+                moisture_levels[plot] = base_moisture
 
-            # Try to start an anomaly
-            anomaly_engine.maybe_trigger(plot)
+                # Try to start an anomaly
+                anomaly_engine.maybe_trigger(plot)
 
-            # Apply anomalies (if any)
-            temp = anomaly_engine.apply(plot, "temperature", base_temp)
-            hum = anomaly_engine.apply(plot, "humidity", base_hum)
-            moisture_levels[plot] = anomaly_engine.apply(plot, "moisture", moisture_levels[plot])
+                # Apply anomalies (if any)
+                temp = anomaly_engine.apply(plot, "temperature", base_temp)
+                hum = anomaly_engine.apply(plot, "humidity", base_hum)
+                moisture_levels[plot] = anomaly_engine.apply(plot, "moisture", moisture_levels[plot])
 
-            # Save for graph
-            temperature_data[plot].append(temp)
-            humidity_data[plot].append(hum)
-            moisture_data[plot].append(moisture_levels[plot])
+                # Save for graph
+                temperature_data[plot].append(temp)
+                humidity_data[plot].append(hum)
+                moisture_data[plot].append(moisture_levels[plot])
 
-            # Console output
-            print(
-                f"Plot {plot} | Device: {device_ids[plot]} → "
-                f"Temp: {temp:.2f}°C | Humidity: {hum:.2f}% | Moisture: {moisture_levels[plot]:.2f}%"
-            )
+                # Console output
+                print(
+                    f"Plot {plot} | Device: {device_ids[plot]} → "
+                    f"Temp: {temp:.2f}°C | Humidity: {hum:.2f}% | Moisture: {moisture_levels[plot]:.2f}%"
+                )
 
-            # Send to API with current_time
-            send_to_api(plot, "TEMPERATURE", temp, current_time)
-            send_to_api(plot, "HUMIDITY", hum, current_time)
-            send_to_api(plot, "MOISTURE", moisture_levels[plot], current_time)
+                # Send to API with current_time
+                send_to_api(plot, "TEMPERATURE", temp, current_time)
+                send_to_api(plot, "HUMIDITY", hum, current_time)
+                send_to_api(plot, "MOISTURE", moisture_levels[plot], current_time)
 
-        current_time += timedelta(minutes=config.MINUTES_PER_STEP)
-        time.sleep(config.READING_INTERVAL_SEC)
-    
-    # ✨ Rapport final
-    print(f"\n\n{'='*60}")
-    print(f"📊 SIMULATION COMPLETE")
-    print(f"{'='*60}")
-    print(f"Total anomalies injected: {len(anomaly_engine.log)}")
-    print(f"Anomaly scenarios used:")
-    if anomaly_engine.scenarios_used:
-        for scenario in sorted(anomaly_engine.scenarios_used):
-            print(f"  - {scenario}")
-    else:
-        print("  - None triggered")
-    
-    # ------------------------------------------------------------
-    # Plot graphs after simulation ends
-    # ------------------------------------------------------------
-    colors = {p: c for p, c in zip(config.PLOT_IDS, ["tab:blue", "tab:orange", "tab:green", "tab:red"])}
+                # End anomaly step after all sensors processed
+                anomaly_engine.end_step(plot)
 
-    # Temperature
-    plt.figure(figsize=(12, 5))
-    for plot in config.PLOT_IDS:
-        plt.plot(time_points, temperature_data[plot], label=f"Plot {plot}", color=colors[plot])
-    plt.xlabel("Simulated Hours")
-    plt.ylabel("Temperature (°C)")
-    plt.title("Temperature per Plot")
-    plt.legend()
-    plt.grid(True)
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # Format as hours:minutes
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))  # Tick every hour
-    plt.gcf().autofmt_xdate()  # Rotate dates for readability
-    plt.savefig("temperature_simulation_per_plot.png")
+                # --------------------------------------------------------
+                # Capture Ground Truth
+                # --------------------------------------------------------
+                # Check if there is an active anomaly for this plot
+                active_anomaly = anomaly_engine.active.get(plot)
+                anomaly_type = active_anomaly["type"] if active_anomaly else "NONE"
+                
+                # Determine if specific sensors are anomalous based on the type
+                # (Logic matches anomaly_engine.apply)
+                is_temp_anom = 1 if anomaly_type in ["HIGH_TEMPERATURE", "LOW_TEMPERATURE", "SENSOR_FREEZE", "NOISE_INJECTION", "SENSOR_DRIFT"] else 0
+                is_hum_anom = 1 if anomaly_type in ["HIGH_HUMIDITY", "LOW_HUMIDITY", "SENSOR_FREEZE", "NOISE_INJECTION", "SENSOR_DRIFT"] else 0
+                is_moist_anom = 1 if anomaly_type in ["HIGH_MOISTURE", "LOW_MOISTURE", "SENSOR_FREEZE", "NOISE_INJECTION", "SENSOR_DRIFT"] else 0
+                
+                # Append rows (one per sensor type per timestamp)
+                ground_truth.append({
+                    "timestamp": current_time,
+                    "plot": plot,
+                    "sensor_type": "TEMPERATURE",
+                    "value": temp,
+                    "is_anomaly": is_temp_anom,
+                    "anomaly_type": anomaly_type if is_temp_anom else "NONE"
+                })
+                ground_truth.append({
+                    "timestamp": current_time,
+                    "plot": plot,
+                    "sensor_type": "HUMIDITY",
+                    "value": hum,
+                    "is_anomaly": is_hum_anom,
+                    "anomaly_type": anomaly_type if is_hum_anom else "NONE"
+                })
+                ground_truth.append({
+                    "timestamp": current_time,
+                    "plot": plot,
+                    "sensor_type": "MOISTURE",
+                    "value": moisture_levels[plot],
+                    "is_anomaly": is_moist_anom,
+                    "anomaly_type": anomaly_type if is_moist_anom else "NONE"
+                })
 
-    # Humidity
-    plt.figure(figsize=(12, 5))
-    for plot in config.PLOT_IDS:
-        plt.plot(time_points, humidity_data[plot], label=f"Plot {plot}", color=colors[plot])
-    plt.xlabel("Simulated Hours")
-    plt.ylabel("Humidity (%)")
-    plt.title("Humidity per Plot")
-    plt.legend()
-    plt.grid(True)
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))
-    plt.gcf().autofmt_xdate()
-    plt.savefig("humidity_simulation_per_plot.png")
+            current_time += timedelta(minutes=config.MINUTES_PER_STEP)
+            time.sleep(config.READING_INTERVAL_SEC)
+            
+    except KeyboardInterrupt:
+        print("\n🛑 Simulation stopped by user. Saving data...")
+        
+    finally:
+        # ------------------------------------------------------------
+        # Export Ground Truth CSV
+        # ------------------------------------------------------------
+        if ground_truth:
+            df_gt = pd.DataFrame(ground_truth)
+            df_gt.to_csv("ground_truth_anomalies.csv", index=False)
+            print("✅ Exported ground_truth_anomalies.csv with true injected anomalies")
+        else:
+            print("⚠ No ground truth data collected.")
 
-    # Moisture
-    plt.figure(figsize=(12, 5))
-    for plot in config.PLOT_IDS:
-        plt.plot(time_points, moisture_data[plot], label=f"Plot {plot}", color=colors[plot])
-    plt.xlabel("Simulated Hours")
-    plt.ylabel("Moisture (%)")
-    plt.title("Moisture per Plot")
-    plt.legend()
-    plt.grid(True)
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-    plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))
-    plt.gcf().autofmt_xdate()
-    plt.savefig("moisture_simulation_per_plot.png")
+        # ------------------------------------------------------------
+        # Plot graphs after simulation ends
+        # ------------------------------------------------------------
+        try:
+            colors = {p: c for p, c in zip(config.PLOT_IDS, ["tab:blue", "tab:orange", "tab:green", "tab:red"])}
 
-    plt.show()
+            # Temperature
+            plt.figure(figsize=(12, 5))
+            for plot in config.PLOT_IDS:
+                if temperature_data[plot]:
+                    plt.plot(time_points[:len(temperature_data[plot])], temperature_data[plot], label=f"Plot {plot}", color=colors[plot])
+            plt.xlabel("Simulated Hours")
+            plt.ylabel("Temperature (°C)")
+            plt.title("Temperature per Plot")
+            plt.legend()
+            plt.grid(True)
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))  # Format as hours:minutes
+            plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))  # Tick every hour
+            plt.gcf().autofmt_xdate()  # Rotate dates for readability
+            plt.savefig("temperature_simulation_per_plot.png")
+
+            # Humidity
+            plt.figure(figsize=(12, 5))
+            for plot in config.PLOT_IDS:
+                if humidity_data[plot]:
+                    plt.plot(time_points[:len(humidity_data[plot])], humidity_data[plot], label=f"Plot {plot}", color=colors[plot])
+            plt.xlabel("Simulated Hours")
+            plt.ylabel("Humidity (%)")
+            plt.title("Humidity per Plot")
+            plt.legend()
+            plt.grid(True)
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))
+            plt.gcf().autofmt_xdate()
+            plt.savefig("humidity_simulation_per_plot.png")
+
+            # Moisture
+            plt.figure(figsize=(12, 5))
+            for plot in config.PLOT_IDS:
+                if moisture_data[plot]:
+                    plt.plot(time_points[:len(moisture_data[plot])], moisture_data[plot], label=f"Plot {plot}", color=colors[plot])
+            plt.xlabel("Simulated Hours")
+            plt.ylabel("Moisture (%)")
+            plt.title("Moisture per Plot")
+            plt.legend()
+            plt.grid(True)
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+            plt.gca().xaxis.set_major_locator(mdates.HourLocator(interval=1))
+            plt.gcf().autofmt_xdate()
+            plt.savefig("moisture_simulation_per_plot.png")
+            
+            print("✅ Plots saved.")
+        except Exception as e:
+            print(f"⚠ Could not save plots: {e}")
 
 
 if __name__ == "__main__":

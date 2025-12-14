@@ -61,7 +61,7 @@
                 <p class="mb-1">
                   {{ a.description || a.severity || 'No description provided.' }}
                 </p>
-                <small class="text-muted">{{ formatDate(a.timestamp) }}</small>
+                <small class="text-muted">{{ formatDate(a.simulated_time) }}</small>
               </div>
               <span class="badge bg-danger">{{ a.severity || a.anomaly_type || 'Alert' }}</span>
             </div>
@@ -80,15 +80,15 @@ import SensorChart from '@/components/SensorChart.vue';
 
 // Raw shape from backend: one row per sensor_type
 interface RawSensorReading {
-  timestamp: string;
+  simulated_time?: string; // simulated time from backend
   plot: number;
   sensor_type: string;
   value: number;
 }
 
-// Combined shape for the chart: one row per timestamp with all metrics
+// Combined shape for the chart: one row per simulated time with all metrics
 interface SensorReading {
-  timestamp: string;
+  simulatedTime: string;
   moisture: number | null;
   temperature: number | null;
   humidity: number | null;
@@ -97,7 +97,7 @@ interface SensorReading {
 interface AnomalyEvent {
   id: number;
   plot: number;
-  timestamp: string;
+  simulated_time: string;
   description?: string;
   type?: string;
   severity?: string;
@@ -147,10 +147,14 @@ const loadData = async () => {
     // Group raw readings (one per sensor_type) into combined rows per timestamp
     const grouped = new Map<string, SensorReading>();
     readRes.data.forEach((r) => {
-      const key = new Date(r.timestamp).toISOString();
+      const timeStr = r.simulated_time;
+      if (!timeStr) return; // require simulated time for charting
+      const t = new Date(timeStr);
+      if (Number.isNaN(t.getTime())) return; // skip invalid dates
+      const key = t.toISOString();
       if (!grouped.has(key)) {
         grouped.set(key, {
-          timestamp: r.timestamp,
+          simulatedTime: timeStr,
           moisture: null,
           temperature: null,
           humidity: null,
@@ -158,7 +162,7 @@ const loadData = async () => {
       }
       const row = grouped.get(key)!;
       const sensor = r.sensor_type.toLowerCase();
-      const tsNum = new Date(r.timestamp).getTime();
+      const tsNum = t.getTime();
       if (sensor.includes('moisture')) {
         row.moisture = r.value;
         if (!latestByType.moisture || tsNum > latestByType.moisture.ts) {
@@ -180,16 +184,19 @@ const loadData = async () => {
     });
 
     readings.value = Array.from(grouped.values()).sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      (a, b) => new Date(a.simulatedTime).getTime() - new Date(b.simulatedTime).getTime()
     );
     latestSnapshot.value = {
       moisture: latestByType.moisture?.value ?? null,
       temperature: latestByType.temperature?.value ?? null,
       humidity: latestByType.humidity?.value ?? null,
     };
-    anomalies.value = anomalyRes.data.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
+    anomalies.value = anomalyRes.data
+      .filter((a) => a.simulated_time)
+      .sort(
+        (a, b) =>
+          new Date(b.simulated_time).getTime() - new Date(a.simulated_time).getTime()
+      );
   } catch (err) {
     console.error(err);
     error.value = 'Failed to load plot data.';

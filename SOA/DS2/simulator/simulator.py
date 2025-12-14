@@ -204,10 +204,13 @@ def run_simulator():
     print(f"\n\n{'='*60}")
     print(f"📊 SIMULATION COMPLETE")
     print(f"{'='*60}")
-    print(f"Total anomalies injected: {len(anomalies_log)}")
+    print(f"Total anomalies injected: {len(anomaly_engine.log)}")
     print(f"Anomaly scenarios used:")
-    for scenario in injector.anomaly_scenarios:
-        print(f"  - {scenario}")
+    if anomaly_engine.scenarios_used:
+        for scenario in sorted(anomaly_engine.scenarios_used):
+            print(f"  - {scenario}")
+    else:
+        print("  - None triggered")
     
     # ------------------------------------------------------------
     # Plot graphs after simulation ends

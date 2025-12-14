@@ -12,6 +12,8 @@ class AnomalyEngine:
 
     def __init__(self):
         self.active = {}  # {plot_id: {"type": ..., "duration": ..., ...}}
+        self.log = []  # chronological list of triggered anomalies
+        self.scenarios_used = set()
 
     # ----------------------------------------------------------
     # Random anomaly trigger
@@ -30,6 +32,8 @@ class AnomalyEngine:
                 "type": anomaly,
                 "duration": random.randint(3, 8),
             }
+            self.log.append({"plot": plot_id, "type": anomaly})
+            self.scenarios_used.add(anomaly)
             print(f"🔥 [ANOMALY START] Plot {plot_id}: {anomaly}")
 
     # ----------------------------------------------------------

@@ -17,7 +17,7 @@ urlpatterns = [
     path("plots/<int:pk>/", PlotDetailView.as_view(), name="plot-detail"),
     path("farms/<int:farm_id>/plots/", PlotByFarmView.as_view(), name="plots-by-farm"),
 
-    # Sensor Readings
+    # Sensor Readings (GET list, POST create)
     path("sensor-readings/", SensorReadingListView.as_view(), name="sensor-reading-list"),
     path("sensor-readings/create/", SensorReadingCreateView.as_view(), name="sensor-reading-create"),
 

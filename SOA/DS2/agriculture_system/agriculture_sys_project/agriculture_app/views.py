@@ -29,6 +29,12 @@ class FarmListView(generics.ListAPIView):
     serializer_class = FarmProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return FarmProfile.objects.all()
+        return FarmProfile.objects.filter(owner=user)
+
 
 # ---------------------------------------------------
 # LIST ALL PLOTS
@@ -40,7 +46,11 @@ class PlotListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            qs = FieldPlot.objects.all()
+        else:
+            qs = FieldPlot.objects.filter(farm__owner=user)
         plot_id = self.request.query_params.get("id")
         if plot_id:
             qs = qs.filter(id=plot_id)
@@ -56,6 +66,12 @@ class PlotDetailView(generics.RetrieveAPIView):
     serializer_class = FieldPlotSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return FieldPlot.objects.all()
+        return FieldPlot.objects.filter(farm__owner=user)
+
 
 # ---------------------------------------------------
 # LIST PLOTS OF A FARM
@@ -67,7 +83,11 @@ class PlotByFarmView(generics.ListAPIView):
 
     def get_queryset(self):
         farm_id = self.kwargs["farm_id"]
-        return FieldPlot.objects.filter(farm_id=farm_id)
+        user = self.request.user
+        qs = FieldPlot.objects.filter(farm_id=farm_id)
+        if user.is_staff or user.is_superuser:
+            return qs
+        return qs.filter(farm__owner=user)
 
 
 # ---------------------------------------------------
@@ -171,16 +191,19 @@ class SensorReadingCreateView(generics.CreateAPIView):
 # LIST SENSOR READINGS BY PLOT
 # GET /api/sensor-readings/?plot=<id>
 # ---------------------------------------------------
-class SensorReadingListView(generics.ListAPIView):
+class SensorReadingListView(generics.ListCreateAPIView):
     serializer_class = SensorReadingSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
         plot_id = self.request.query_params.get("plot")
         qs = SensorReading.objects.all()
         if plot_id:
             qs = qs.filter(plot_id=plot_id)
-        return qs
+        if user.is_staff or user.is_superuser:
+            return qs
+        return qs.filter(plot__farm__owner=user)
 
 
 # ---------------------------------------------------
@@ -192,11 +215,14 @@ class AnomalyListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
         plot_id = self.request.query_params.get("plot")
         qs = AnomalyEvent.objects.all()
         if plot_id:
             qs = qs.filter(plot_id=plot_id)
-        return qs
+        if user.is_staff or user.is_superuser:
+            return qs
+        return qs.filter(plot__farm__owner=user)
 
 
 # ---------------------------------------------------
@@ -208,8 +234,11 @@ class RecommendationListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        user = self.request.user
         anomaly_id = self.request.query_params.get("anomaly")
-        qs = AgentRecommendation.objects.all()
+        qs = AgentRecommendation.objects.all().select_related("anomaly_event", "anomaly_event__plot", "anomaly_event__plot__farm")
         if anomaly_id:
             qs = qs.filter(anomaly_event_id=anomaly_id)
-        return qs
+        if user.is_staff or user.is_superuser:
+            return qs
+        return qs.filter(anomaly_event__plot__farm__owner=user)

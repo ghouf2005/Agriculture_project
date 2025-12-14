@@ -27,7 +27,7 @@ import {
 ChartJS.register(Title, Tooltip, Legend, LineElement, PointElement, CategoryScale, LinearScale);
 
 interface SensorReading {
-  timestamp: string;
+  simulatedTime: string;
   moisture: number | null;
   temperature: number | null;
   humidity: number | null;
@@ -35,7 +35,7 @@ interface SensorReading {
 
 interface Anomaly {
   id: number;
-  timestamp: string;
+  simulated_time: string;
   description?: string;
 }
 
@@ -46,11 +46,15 @@ const props = defineProps<{
 
 const anomalyKeys = computed(() => {
   return new Set(
-    (props.anomalies || []).map((a) => new Date(a.timestamp).toISOString().slice(0, 19))
+    (props.anomalies || [])
+      .filter((a) => a.simulated_time)
+      .map((a) => new Date(a.simulated_time).toISOString().slice(0, 19))
   );
 });
 
-const labels = computed(() => props.readings.map((r) => new Date(r.timestamp).toLocaleTimeString()));
+const labels = computed(() =>
+  props.readings.map((r) => new Date(r.simulatedTime).toLocaleTimeString())
+);
 
 const chartData = computed(() => ({
   labels: labels.value,
@@ -62,10 +66,10 @@ const chartData = computed(() => ({
       backgroundColor: '#0d6efd',
       tension: 0.3,
       pointRadius: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? 5 : 3
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? 5 : 3
       ),
       pointBackgroundColor: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? '#dc3545' : '#0d6efd'
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? '#dc3545' : '#0d6efd'
       ),
     },
     {
@@ -75,10 +79,10 @@ const chartData = computed(() => ({
       backgroundColor: '#fd7e14',
       tension: 0.3,
       pointRadius: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? 5 : 3
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? 5 : 3
       ),
       pointBackgroundColor: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? '#dc3545' : '#fd7e14'
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? '#dc3545' : '#fd7e14'
       ),
     },
     {
@@ -88,10 +92,10 @@ const chartData = computed(() => ({
       backgroundColor: '#20c997',
       tension: 0.3,
       pointRadius: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? 5 : 3
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? 5 : 3
       ),
       pointBackgroundColor: props.readings.map((r) =>
-        anomalyKeys.value.has(new Date(r.timestamp).toISOString().slice(0, 19)) ? '#dc3545' : '#20c997'
+        anomalyKeys.value.has(new Date(r.simulatedTime).toISOString().slice(0, 19)) ? '#dc3545' : '#20c997'
       ),
     },
   ],

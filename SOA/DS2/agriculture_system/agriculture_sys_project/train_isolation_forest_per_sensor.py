@@ -104,9 +104,18 @@ def train_model(sensor_type, filename):
     prelim_preds = prelim_model.predict(X_scaled)
     # Estimate fraction of anomalies (clamped between 1% and 10%)
     estimated_contamination = max(0.01, min(0.1, (prelim_preds == -1).mean()))
-    contamination = estimated_contamination
+    # Per-sensor tuning for better balance: higher for Temp/Hum (less FN), lower for Moisture (less FP)
+    if sensor_type == "TEMPERATURE":
+        contamination = 0.05  # Slightly higher → better recall
+    elif sensor_type == "HUMIDITY":
+        contamination = 0.05   # Same — Humidity behaves well
+    elif sensor_type == "MOISTURE":
+        contamination = 0.025  # Lower than others → cuts FP significantly
+    else:
+        contamination = 0.04
 
     print(f"   Estimated contamination from data: {estimated_contamination:.4f}")
+    print(f"   Using tuned contamination: {contamination:.4f}")
 
     print(f"   Training Isolation Forest (contamination={contamination})...")
     model = IsolationForest(

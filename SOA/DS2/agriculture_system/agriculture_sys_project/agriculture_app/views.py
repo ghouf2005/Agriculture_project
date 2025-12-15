@@ -139,14 +139,13 @@ class SensorReadingCreateView(generics.CreateAPIView):
         # Threshold: require minimum confidence to reduce false positives
         # Higher threshold for humidity to avoid false positives from natural daily cycles
         if instance.sensor_type == "TEMPERATURE":
-             threshold = 0.55
+             threshold = 0.68
         elif instance.sensor_type == "HUMIDITY":
-             threshold = 0.60
+             threshold = 0.70
         elif instance.sensor_type == "MOISTURE":
-             threshold = 0.52
+             threshold = 0.78
         else:
              threshold = 0.15
-
         if is_anomaly and confidence_score >= threshold:
             print(
                 f"🔥 Anomaly detected: {instance.sensor_type} "
@@ -175,12 +174,13 @@ class SensorReadingCreateView(generics.CreateAPIView):
             anomaly_type = anomaly_map[instance.sensor_type]
 
             # Determine severity based on confidence score
-            if confidence_score < 0.2:
+            if confidence_score < 0.65:
                 severity = SeverityLevel.LOW
-            elif confidence_score < 0.4:
+            elif confidence_score < 0.80:
                 severity = SeverityLevel.MEDIUM
             else:
                 severity = SeverityLevel.HIGH
+
 
             # Create anomaly event with simulated_time copied from the reading
             anomaly_event = AnomalyEvent.objects.create(

@@ -87,32 +87,11 @@ def smooth(prev, new, alpha=0.2):
 # ------------------------------------------------------------
 # Refresh token function
 # ------------------------------------------------------------
-# Add near the top with other functions
-def login_and_get_tokens():
-    global ACCESS_TOKEN, REFRESH_TOKEN
-    login_url = "http://127.0.0.1:8000/api/auth/token/"
-    payload = {
-        "username": os.getenv("SIMULATOR_USERNAME", "admin"),
-        "password": os.getenv("SIMULATOR_PASSWORD", "lolo2020")
-    }
-    try:
-        response = requests.post(login_url, json=payload)
-        response.raise_for_status()
-        data = response.json()
-        ACCESS_TOKEN = data["access"]
-        REFRESH_TOKEN = data["refresh"]
-        print("✅ Fresh tokens obtained via login")
-        return True
-    except Exception as e:
-        print(f"❌ Failed to login for tokens: {e}")
-        return False
-
-# Improve refresh_token() to fallback to login
 def refresh_token():
     global ACCESS_TOKEN
     if not REFRESH_TOKEN:
-        print("⚠ No refresh token — attempting direct login")
-        return login_and_get_tokens()
+        print("⚠ No refresh token in .env — cannot refresh.")
+        return False
 
     payload = {"refresh": REFRESH_TOKEN}
     try:
@@ -120,11 +99,12 @@ def refresh_token():
         response.raise_for_status()
         data = response.json()
         ACCESS_TOKEN = data.get('access', '')
-        print("✅ Access token refreshed")
+        print("✅ Refreshed access token. Update .env with new ACCESS_TOKEN if needed.")
         return True
     except Exception as e:
-        print(f"❌ Refresh failed ({e}) — falling back to login")
-        return login_and_get_tokens()
+        print(f"❌ Refresh error: {e}. Update tokens in .env manually.")
+        return False
+
 # ------------------------------------------------------------
 # Send to API with refresh on 401
 # ------------------------------------------------------------

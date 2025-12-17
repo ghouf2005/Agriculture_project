@@ -89,6 +89,7 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",  # Pour Swagger
 }
 
+
 # JWT configuration
 SIMPLE_JWT = {
     "SIGNING_KEY": os.getenv("JWT_SECRET", SECRET_KEY),

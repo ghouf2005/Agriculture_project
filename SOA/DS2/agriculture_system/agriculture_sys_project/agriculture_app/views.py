@@ -1,9 +1,9 @@
 # views.py
-# Updated to use MLAnomalyDetector with proper feature engineering
+# OPTIMIZED: Added magnitude filtering to reduce false positives
 from rest_framework import generics, permissions
-from .enumerations import AnomalyType, SeverityLevel, AgentConfidence  # Added AgentConfidence
+from .enumerations import AnomalyType, SeverityLevel, AgentConfidence
 from .ml_model import get_detector
-from .agent_module import generate_recommendation  # Import the recommendation generator
+from .agent_module import generate_recommendation
 from .models import (
     FarmProfile,
     FieldPlot,
@@ -96,28 +96,19 @@ class PlotByFarmView(generics.ListAPIView):
 # ---------------------------------------------------
 class SensorReadingCreateView(generics.CreateAPIView):
     serializer_class = SensorReadingSerializer
-    permission_classes = [permissions.IsAuthenticated]  # simulator must authenticate
+    permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
         instance = serializer.save()
 
-        # -------------------------------
         # Get detector for this sensor type
-        # -------------------------------
         detector = get_detector(instance.sensor_type)
         
         if detector is None:
             print(f"⚠ ML model missing for {instance.sensor_type}, skipping anomaly detection")
             return
 
-        # -------------------------------
         # Predict anomaly using proper feature engineering
-        # The detector maintains context per plot automatically
-        # -------------------------------
-        # -------------------------------
-        # Predict anomaly using proper feature engineering
-        # The detector maintains context per plot automatically
-        # -------------------------------
         plot_id = instance.plot.id
         try:
             is_anomaly, confidence_score = detector.predict(
@@ -126,75 +117,100 @@ class SensorReadingCreateView(generics.CreateAPIView):
                 value=instance.value
             )
         except Exception as e:
-            # Fallback if model prediction fails (e.g. stale model file)
             print(f"⚠ Prediction failed for {instance.sensor_type}: {e}")
             is_anomaly = False
             confidence_score = 0.0
 
-        # -------------------------------
-        # Detect anomaly with improved threshold
-        # Using confidence_score (already normalized) with threshold
-        # Higher threshold for humidity to avoid false positives from natural daily cycles
-        # -------------------------------
-        # Threshold: require minimum confidence to reduce false positives
-        # Higher threshold for humidity to avoid false positives from natural daily cycles
-        if instance.sensor_type == "TEMPERATURE":
-             threshold = 0.68
-        elif instance.sensor_type == "HUMIDITY":
-             threshold = 0.70
-        elif instance.sensor_type == "MOISTURE":
-             threshold = 0.78
-        else:
-             threshold = 0.15
-        if is_anomaly and confidence_score >= threshold:
+        # Only proceed if ML model flags it as anomaly
+        if not is_anomaly:
+            return
+
+        # ============================================================
+        # MAGNITUDE FILTER: Reduce false positives on borderline values
+        # Only create anomaly event if value is significantly outside
+        # normal range (not just slightly unusual)
+        # ============================================================
+        
+        # Define normal operating ranges (center points)
+        normal_ranges = {
+            "TEMPERATURE": (18, 28),  # Normal: 18-28°C
+            "HUMIDITY": (50, 75),     # Normal: 50-75%
+            "MOISTURE": (40, 70),     # Normal: 40-70%
+        }
+        
+        # Magnitude thresholds: how far outside normal range to flag
+        magnitude_thresholds = {
+            "TEMPERATURE": 3.0,  # Must be ±3°C outside range
+            "HUMIDITY": 8.0,     # Must be ±8% outside range
+            "MOISTURE": 8.0,     # Must be ±8% outside range
+        }
+        
+        min_val, max_val = normal_ranges.get(instance.sensor_type, (0, 100))
+        threshold = magnitude_thresholds.get(instance.sensor_type, 5.0)
+        
+        # Check if value is significantly outside normal range
+        is_significantly_low = instance.value < (min_val - threshold)
+        is_significantly_high = instance.value > (max_val + threshold)
+        
+        if not (is_significantly_low or is_significantly_high):
             print(
-                f"🔥 Anomaly detected: {instance.sensor_type} "
-                f"value={instance.value:.2f} plot={plot_id} "
-                f"confidence={confidence_score:.4f}"
+                f"⚠️ Anomaly dismissed (insufficient magnitude): "
+                f"{instance.sensor_type}={instance.value:.2f} "
+                f"(normal range: {min_val}-{max_val}, threshold: ±{threshold})"
             )
+            return
+        
+        # ============================================================
+        # ANOMALY CONFIRMED - Create event
+        # ============================================================
+        
+        print(
+            f"🔥 Anomaly confirmed: {instance.sensor_type} "
+            f"value={instance.value:.2f} plot={plot_id} "
+            f"confidence={confidence_score:.4f}"
+        )
 
-            # Determine anomaly type based on value and sensor type
-            anomaly_map = {
-                "TEMPERATURE": (
-                    AnomalyType.HIGH_TEMPERATURE
-                    if instance.value > 28
-                    else AnomalyType.LOW_TEMPERATURE
-                ),
-                "HUMIDITY": (
-                    AnomalyType.HIGH_HUMIDITY
-                    if instance.value > 75
-                    else AnomalyType.LOW_HUMIDITY
-                ),
-                "MOISTURE": (
-                    AnomalyType.HIGH_MOISTURE
-                    if instance.value > 75
-                    else AnomalyType.LOW_MOISTURE
-                ),
-            }
-            anomaly_type = anomaly_map[instance.sensor_type]
+        # Determine anomaly type based on value and sensor type
+        anomaly_map = {
+            "TEMPERATURE": (
+                AnomalyType.HIGH_TEMPERATURE
+                if instance.value > max_val
+                else AnomalyType.LOW_TEMPERATURE
+            ),
+            "HUMIDITY": (
+                AnomalyType.HIGH_HUMIDITY
+                if instance.value > max_val
+                else AnomalyType.LOW_HUMIDITY
+            ),
+            "MOISTURE": (
+                AnomalyType.HIGH_MOISTURE
+                if instance.value > max_val
+                else AnomalyType.LOW_MOISTURE
+            ),
+        }
+        anomaly_type = anomaly_map.get(instance.sensor_type, AnomalyType.HIGH_TEMPERATURE)
 
-            # Determine severity based on confidence score
-            if confidence_score < 0.65:
-                severity = SeverityLevel.LOW
-            elif confidence_score < 0.80:
-                severity = SeverityLevel.MEDIUM
-            else:
-                severity = SeverityLevel.HIGH
+        # Determine severity based on confidence score
+        if confidence_score < 0.65:
+            severity = SeverityLevel.LOW
+        elif confidence_score < 0.80:
+            severity = SeverityLevel.MEDIUM
+        else:
+            severity = SeverityLevel.HIGH
 
+        # Create anomaly event
+        anomaly_event = AnomalyEvent.objects.create(
+            simulated_time=instance.simulated_time,
+            plot=instance.plot,
+            anomaly_type=anomaly_type,
+            severity=severity,
+            model_confidence=min(confidence_score, 1.0),
+        )
+        
+        print(f"✅ Created AnomalyEvent #{anomaly_event.id} with severity {severity}")
 
-            # Create anomaly event with simulated_time copied from the reading
-            anomaly_event = AnomalyEvent.objects.create(
-                simulated_time=instance.simulated_time,  # Direct copy from the reading
-                plot=instance.plot,
-                anomaly_type=anomaly_type,
-                severity=severity,
-                model_confidence=min(confidence_score, 1.0),  # Cap at 1.0
-            )
-            
-            print(f"✅ Created AnomalyEvent #{anomaly_event.id} with severity {severity}")
-
-            # Trigger AI agent to create recommendation (from agent_module.py)
-            generate_recommendation(anomaly_event)  # This creates and saves AgentRecommendation
+        # Trigger AI agent recommendation
+        generate_recommendation(anomaly_event)
 
 
 # ---------------------------------------------------

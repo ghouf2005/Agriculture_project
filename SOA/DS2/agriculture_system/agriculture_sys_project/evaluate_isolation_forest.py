@@ -2,13 +2,12 @@ import os
 import pandas as pd
 import numpy as np
 from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix, classification_report
-
 import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "agriculture_sys_project.settings")
 django.setup()
 
-from agriculture_app.ml_model import get_detector, engineer_features_matrix, FEATURE_WINDOW
+from agriculture_app.ml_model import create_detector
 
 CSV_PATH = "ground_truth_anomalies.csv"
 SENSORS = ["TEMPERATURE", "HUMIDITY", "MOISTURE"]
@@ -16,10 +15,10 @@ SENSORS = ["TEMPERATURE", "HUMIDITY", "MOISTURE"]
 
 def evaluate_sensor(sensor_type: str, df: pd.DataFrame):
     print(f"\n{'='*70}")
-    print(f"📊 Evaluating {sensor_type}")
+    print(f"📊 Evaluating {sensor_type} (PRODUCTION LOGIC)")
     print(f"{'='*70}")
 
-    detector = get_detector(sensor_type)
+    detector = create_detector(sensor_type)
     if detector is None:
         print(f"❌ No detector found for {sensor_type}. Train first.")
         return
@@ -36,20 +35,26 @@ def evaluate_sensor(sensor_type: str, df: pd.DataFrame):
     y_pred_all = []
 
     for plot_id, g in sub.groupby("plot"):
-        if len(g) < FEATURE_WINDOW * 2:
-            continue
-
         values = g["value"].astype(float).values
         y_true = g["is_anomaly"].astype(int).values
 
-        X = engineer_features_matrix(values, window=FEATURE_WINDOW)
-        Xs = detector.scaler.transform(X)
+        # reset so each plot is independent
+        detector.reset_all()
 
-        pred = detector.model.predict(Xs)  # -1 anomaly, 1 normal
-        y_pred = (pred == -1).astype(int)
+        preds = []
+        for v in values:
+            is_anom, _conf = detector.predict(plot_id=plot_id, sensor_type=sensor_type, value=v)
+            preds.append(1 if is_anom else 0)
 
-        y_true_all.append(y_true)
-        y_pred_all.append(y_pred)
+        preds = np.array(preds, dtype=int)
+
+        # skip early unstable region (rolling features warmup)
+        start = detector.window
+        if len(preds) <= start:
+            continue
+
+        y_true_all.append(y_true[start:])
+        y_pred_all.append(preds[start:])
 
     if not y_true_all:
         print("⚠ Not enough plot segments for evaluation.")
@@ -69,12 +74,21 @@ def evaluate_sensor(sensor_type: str, df: pd.DataFrame):
     print(f"Precision={precision:.4f}  Recall={recall:.4f}  F1={f1:.4f}  FPR={fpr:.4f}")
 
     print("\nClassification report:")
-    print(classification_report(y_true, y_pred, target_names=["Normal", "Anomaly"], zero_division=0))
+    print(
+    classification_report(
+        y_true,
+        y_pred,
+        labels=[0, 1],
+        target_names=["Normal", "Anomaly"],
+        zero_division=0
+    )
+)
+
 
 
 if __name__ == "__main__":
     if not os.path.exists(CSV_PATH):
-        print(f"❌ Missing {CSV_PATH}. Run simulator with anomalies to generate it.")
+        print(f"❌ Missing {CSV_PATH}. Run simulator to generate it.")
         raise SystemExit(1)
 
     df = pd.read_csv(CSV_PATH)

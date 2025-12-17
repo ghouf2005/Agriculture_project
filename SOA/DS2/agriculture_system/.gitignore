@@ -1,0 +1,38 @@
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+/staticfiles/
+media/
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+env/
+virt/
+virtualenv/
+
+# Pipenv
+Pipfile.lock
+
+# VSCode / PyCharm
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+# ML artifacts
+*.pkl
+
+# Generated plots
+*.png
+
+# Datasets
+*.csv
+
+agriculture_system/agriculture_sys_project/agriculture_sys_project/settings.py

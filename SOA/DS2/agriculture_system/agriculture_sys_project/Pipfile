@@ -1,0 +1,23 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+faker = "*"
+matplotlib = "*"
+numpy = "*"
+scikit-learn = "*"
+psycopg2-binary = "*"
+pandas = "*"
+django = "*"
+djangorestframework = "*"
+djangorestframework-simplejwt = "*"
+django-cors-headers = "*"
+drf-spectacular = "*"
+python-dotenv = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.13"

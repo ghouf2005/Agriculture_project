@@ -1,0 +1,39 @@
+
+services:
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    restart: always
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./agriculture_sys_project
+    container_name: django_backend
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      gunicorn agriculture_sys_project.wsgi:application --bind 0.0.0.0:8000
+      "
+    volumes:
+      - ./agriculture_sys_project:/app
+    env_file: .env
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    container_name: frontend_app
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  postgres_data:

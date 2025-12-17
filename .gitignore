@@ -1,0 +1,22 @@
+SOA/DS2/simulator/.env
+SOA/DS2/simulator/config.py
+SOA/DS2/simulator/.env
+SOA/DS2/simulator/config.py
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Node
+node_modules/
+
+# Docker
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

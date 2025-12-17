@@ -4,7 +4,7 @@
 # ======================================================
 # Plot configuration 
 # ======================================================
-PLOT_IDS = [5, 2, 3, 4]  # Must exist in database
+PLOT_IDS = [1,2, 3, 4]  # Must exist in database
 
 
 # ======================================================
@@ -51,7 +51,7 @@ USE_FAKE_DEVICE_IDS = True
 # ANOMALY INJECTION (Day 3)
 # ======================================================
 
-ANOMALY_CHANCE = 0
+ANOMALY_CHANCE = 0.02
 
 ENABLED_ANOMALIES = [
     "HIGH_TEMPERATURE",

@@ -9,7 +9,7 @@ import matplotlib.dates as mdates
 import requests
 import os
 from dotenv import load_dotenv
-import config
+import SOA.DS2.simulator.config as config
 from anomaly_engine import AnomalyEngine
 
 # Force load .env located in the same folder as simulator.py

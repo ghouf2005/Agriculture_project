@@ -1,7 +1,7 @@
 # anomaly_engine.py
 import random
 import numpy as np
-import config
+import SOA.DS2.simulator.config as config
 
 
 class AnomalyEngine:

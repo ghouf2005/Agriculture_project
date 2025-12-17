@@ -68,14 +68,10 @@ WSGI_APPLICATION = 'agriculture_sys_project.wsgi.application'
 
 # Database
 DATABASES = {
-"default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-    },
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
 }
 
 # REST Framework configuration
@@ -88,7 +84,12 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",  # Pour Swagger
 }
-
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Agriculture Monitoring API',
+    'DESCRIPTION': 'AI-Enhanced Crop Monitoring and Anomaly Detection System',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
 # JWT configuration
 SIMPLE_JWT = {
     "SIGNING_KEY": os.getenv("JWT_SECRET", SECRET_KEY),

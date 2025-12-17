@@ -1,0 +1,46 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: agriculture_db
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: agriculture_db
+      POSTGRES_USER: agri_user
+      POSTGRES_PASSWORD: agri_password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agri_user -d agriculture_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agriculture_network
+
+  backend:
+    build: .
+    container_name: agriculture_backend
+    restart: always
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    env_file:
+      - C:\Users\MEDIA TEK\Agriculture_project\SOA\DS2\simulator\.env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - agriculture_network
+
+volumes:
+  postgres_data:
+
+networks:
+  agriculture_network:
+    driver: bridge

@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-key-change-in-production")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True  # ✅ Booléen, pas string
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = []
 
 # Application definition
 INSTALLED_APPS = [

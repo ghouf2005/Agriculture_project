@@ -1,24 +1,24 @@
 #!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
 import os
 import sys
+from dotenv import load_dotenv
 
 
 def main():
-    """Run administrative tasks."""
-    # Load .env file
-    from dotenv import load_dotenv
-    load_dotenv()
+    # 🔥 FORCE loading the .env next to manage.py
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(BASE_DIR, ".env")
+    load_dotenv(env_path)
 
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'agriculture_sys_project.settings')
-    try:
-        from django.core.management import execute_from_command_line
-    except ImportError as exc:
-        raise ImportError(
-            "Couldn't import Django. Are you sure it's installed and "
-            "available on your PYTHONPATH environment variable? Did you "
-            "forget to activate a virtual environment?"
-        ) from exc
+    # ✅ DEBUG (temporary)
+    print(">>> DB_HOST =", os.getenv("DB_HOST"))
+
+    os.environ.setdefault(
+        'DJANGO_SETTINGS_MODULE',
+        'agriculture_sys_project.settings'
+    )
+
+    from django.core.management import execute_from_command_line
     execute_from_command_line(sys.argv)
 
 

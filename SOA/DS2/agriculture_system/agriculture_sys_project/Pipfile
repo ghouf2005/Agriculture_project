@@ -15,6 +15,7 @@ djangorestframework = "*"
 djangorestframework-simplejwt = "*"
 django-cors-headers = "*"
 drf-spectacular = "*"
+dotenv = "*"
 python-dotenv = "*"
 
 [dev-packages]
